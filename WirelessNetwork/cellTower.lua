@@ -225,7 +225,7 @@ local function help()
     for i,cmd in ipairs(cmds) do
         print("    "..cmd)
     end
-end    
+end
 -- CLI
 local function cli()
     help()
