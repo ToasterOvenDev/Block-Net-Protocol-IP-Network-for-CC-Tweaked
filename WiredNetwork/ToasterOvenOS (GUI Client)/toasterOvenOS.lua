@@ -1,4 +1,4 @@
--- clientGUI.lua
+-- toasterOvenOS.lua
 
 package.path = package.path .. ";./Dependencies/?.lua"
 
@@ -57,6 +57,7 @@ local input = main:addInput()
     :setSize(25,1)
     :setForeground(colors.white)
     :setDefaultText("Enter Password here...")
+    :setInputType("password")
 
 local label = main:addLabel()
     :setPosition(2,4)
@@ -239,24 +240,24 @@ sub["Network Shell"]:addProgram()
 sub["Shell"]:addProgram():onError(function(self, event, err) basalt.log("An error occurred: " .. err) end):onDone(function() basalt.log("Program finished successfully") end):execute("/rom/programs/shell.lua"):setPosition(1,1):setSize("parent.w","parent.h")
 
 -- Settings Frame
-local setIP = (client.getIP() or "N/A") -- Settings IP variable
-local setDHCP = (client.getHostSvrIP() or "N/A") -- Settings DHCPIP variable
-local IPError = "Error: Invalid IP, should follow num.num.num.num" -- IP error, used like 3 times got tired of writing it tbh
+local setBNP = (client.getBNP() or "N/A") -- Settings BNP variable
+local setDNS = (client.getHostSvrBNP() or "N/A") -- Settings DNSBNP variable
+local BNPError = "Error: Invalid BNP, should follow num.num.num.num" -- BNP error, used like 3 times got tired of writing it tbh
 
 settings:addButton():setText("Back"):setPosition(1,18):setSize(6,1):onClick(function() clientFrame:show() end):setForeground(colors.white):setBackground(colors.black) -- From settings back to active Desktop
-settings:addLabel():setText("IP: "):setPosition(2,2):setForeground(colors.white) -- Label for IP
-settings:addLabel():setText("DHCP: "):setPosition(2,4):setForeground(colors.white) -- Label for DHCP IP
+settings:addLabel():setText("BNP: "):setPosition(2,2):setForeground(colors.white) -- Label for BNP
+settings:addLabel():setText("DNS: "):setPosition(2,4):setForeground(colors.white) -- Label for DNS BNP
 settings:addLabel():setText("Username: "):setPosition(2,6):setForeground(colors.white)-- Label for Username
 settings:addLabel():setText("Password: "):setPosition(2,8):setForeground(colors.white) -- Label for Password
 local setErrLabel = settings:addLabel():setPosition(2,10):setForeground(colors.red):setText("Error text appears here")
-local inputmyIP = settings:addInput():setDefaultText(setIP):setPosition(6,2):setInputLimit(23):setSize(24,1) -- input for IP
-local inputDHCPIP = settings:addInput():setDefaultText(setDHCP):setPosition(8,4):setInputLimit(23):setSize(24,1) -- input for DHCP IP
+local inputmyBNP = settings:addInput():setDefaultText(setBNP):setPosition(6,2):setInputLimit(23):setSize(24,1) -- input for BNP
+local inputDNSBNP = settings:addInput():setDefaultText(setDNS):setPosition(8,4):setInputLimit(23):setSize(24,1) -- input for DNS BNP
 local inputUsername = settings:addInput():setDefaultText(username):setPosition(12,6):setInputLimit(12):setSize(13,1) -- 12 characters max input for username
-local inputPass = settings:addInput():setDefaultText(("*"):rep(#password)):setPosition(12,8):setInputLimit(24):setSize(25,1) -- input for password
--- Button to submit the IP in input
-settings:addButton():setText("Change IP"):setPosition(36,2):setSize(10,1):setForeground(colors.white):setBackground(colors.black):onClick(function() local inputIP = inputmyIP:getValue() if not inputIP then client.setIP(nil) setErrLabel:setText(IPError .. "IP currently nil") elseif inputIP:match("^%d+%.%d+%.%d+%.%d+$") then client.setIP(inputIP) elseif not inputIP:match("^%d+%.%d+%.%d+%.%d+$") then setErrLabel:setText(IPError) end end)
--- Button to submit the DHCP IP in input
-settings:addButton():setText("Change DHCP"):setPosition(36,4):setSize(10,1):setForeground(colors.white):setBackground(colors.black):onClick(function() local inputIP = inputDHCPIP:getValue() if not inputIP then client.setHostSvrIP(nil) setErrLabel:setText(IPError .. "IP currently nil") elseif inputIP:match("^%d+%.%d+%.%d+%.%d+$") then client.setHostSvrIP(inputIP) elseif not inputIP:match("^%d+%.%d+%.%d+%.%d+$") then setErrLabel:setText(IPError) end end)
+local inputPass = settings:addInput():setDefaultText(("*"):rep(#password)):setPosition(12,8):setInputLimit(24):setSize(25,1):setInputType("password") -- input for password
+-- Button to submit the BNP in input
+settings:addButton():setText("Change BNP"):setPosition(36,2):setSize(10,1):setForeground(colors.white):setBackground(colors.black):onClick(function() local inputBNP = inputmyBNP:getValue() if not inputBNP then client.setBNP(nil) setErrLabel:setText(BNPError .. "BNP currently nil") elseif inputBNP:match("^%d+%.%d+%.%d+%.%d+$") then client.setBNP(inputBNP) elseif not inputBNP:match("^%d+%.%d+%.%d+%.%d+$") then setErrLabel:setText(BNPError) end end)
+-- Button to submit the DNS BNP in input
+settings:addButton():setText("Change DNS"):setPosition(36,4):setSize(10,1):setForeground(colors.white):setBackground(colors.black):onClick(function() local inputBNP = inputDNSBNP:getValue() if not inputBNP then client.setHostSvrBNP(nil) setErrLabel:setText(BNPError .. "BNP currently nil") elseif inputBNP:match("^%d+%.%d+%.%d+%.%d+$") then client.setHostSvrBNP(inputBNP) elseif not inputBNP:match("^%d+%.%d+%.%d+%.%d+$") then setErrLabel:setText(BNPError) end end)
 -- Button to submit the Username in input
 settings:addButton():setText("Change Username"):setPosition(36,6):setSize(10,1):setForeground(colors.white):setBackground(colors.black):onClick(function() local input = inputUsername:getValue() if not input then username = "User" setErrLabel:setText("Error: No username input, setting to 'User'") else username = input or "User" saveConfig() usernameLabel:setText(username) end end)
 -- Button to submit the Password in input
@@ -269,7 +270,7 @@ local desktops = {"Desktop 1","Desktop 2","Desktop 3"}
 for i,k in pairs(desktops) do
     sub[k]:addPane():setSize("parent.w", 1):setPosition(1, 1):setBackground(colors.blue) -- Bar on top of all desktops to make the desktop label more readable
     sub[k]:addLabel():setText(k):setPosition(1,1) -- Top of all desktops to show which one you're on
-    sub[k]:addButton():setText("Settings"):setPosition(2,3):setSize(10,3):onClick(function() settings:show() end) -- Settings button to change things like IP or Username
+    sub[k]:addButton():setText("Settings"):setPosition(2,3):setSize(10,3):onClick(function() settings:show() end) -- Settings button to change things like BNP or Username
     sub[k]:addButton():setText("Installer"):setPosition(14,3):setSize(10,3):onClick(function() openProgram(sub[k],"Apps/installer.lua","Installer",colors.cyan) end) --Will be an installer to install other programs for the desktops
     sub[k]:addButton():setText("Reload"):setPosition(43,1):setSize(8,1):setBackground(colors.blue):onClick(function() loadApps() os.sleep(0.5) for _,btn in pairs(DesktopButtons[k]) do btn:remove() end DesktopButtons[k] = {} xDynPos[i] = 26 yDynPos[i] = 3 for j in pairs(apps[k]) do xDynPos[i],yDynPos[i] = addBtn(sub[k],apps[k][j],xDynPos[i],yDynPos[i],k) end end) -- Going to "reolad" the desktop by reloading installed programs and adding a button
 end

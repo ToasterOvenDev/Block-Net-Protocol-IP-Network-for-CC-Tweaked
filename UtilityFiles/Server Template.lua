@@ -2,7 +2,7 @@
 -- Features include multishell launch
 -- Debug printing with a command to turn it on and off
 -- Automatic locating of connected modems
--- Multi-channel IP system
+-- Multi-channel BNP system
 -- Reply to hello packets and switch hello packets
 -- Receive loop to process recieved packets
 -- Startup on boot
@@ -56,32 +56,32 @@ modem.open(1)
 modem.open(PRIVATE_CHANNEL)
 
 -- CONFIGURATION VARIABLES
-local IP_FILE = "ip.txt" -- the name of the IP text file for loading/saving
-local myIP
+local BNP_FILE = "BNP.txt" -- the name of the BNP text file for loading/saving
+local myBNP
 local routerChannel = 1
 local SERVERNAME = "placeholder.lua" -- For ensure startup replace 'placeholder' with your server's name
 
 -- ==========================
--- LOAD OR CREATE IP
+-- LOAD OR CREATE BNP
 -- ==========================
-if not fs.exists(IP_FILE) then
-    local f = fs.open(IP_FILE,"w")
+if not fs.exists(BNP_FILE) then
+    local f = fs.open(BNP_FILE,"w")
     f.writeLine("")
     f.close()
     term.setTextColor(colors.red)
-    print(IP_FILE.." created. Use CLI command 'set ip <ip>' to assign IP")
+    print(BNP_FILE.." created. Use CLI command 'set BNP <BNP>' to assign BNP")
     term.setTextColor(colors.white)
-    myIP = nil
+    myBNP = nil
 else
-    local f = fs.open(IP_FILE,"r")
-    myIP = f.readLine()
+    local f = fs.open(BNP_FILE,"r")
+    myBNP = f.readLine()
     f.close()
-    if myIP=="" then myIP=nil end
+    if myBNP=="" then myBNP=nil end
 end
 
-local function saveIP()
-    local f = fs.open(IP_FILE,"w")
-    f.writeLine(myIP)
+local function saveBNP()
+    local f = fs.open(BNP_FILE,"w")
+    f.writeLine(myBNP)
     f.close()
 end
 
@@ -95,17 +95,17 @@ local function makeUID()
 end
 
 local function sendPacket(dst,payload)
-    if not myIP then
-        print("Set your IP first with 'set ip <ip>' before sending packets.")
+    if not myBNP then
+        print("Set your BNP first with 'set BNP <BNP>' before sending packets.")
         return
     end
-    local packet = { uid=makeUID(), src=myIP, dst=resolved, ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
 end
 
 -- HELLO_REPLY
 local function replyHello(requester, private_channel)
-    if not myIP then return end
+    if not myBNP then return end
     sendPacket(requester,{
         type = "HELLO_REPLY",
         private_channel = PRIVATE_CHANNEL
@@ -121,22 +121,22 @@ local function switchReply(side, packet)
     local payload = packet.payload
     -- Only respond if this is a switch hello from a switch
     if not payload.switch then return end
-    -- Make sure the client has an IP
-    if not myIP then
-        debugPrint("Received S_H from switch but server IP is not set, ignoring.")
+    -- Make sure the client has an BNP
+    if not myBNP then
+        debugPrint("Received S_H from switch but server BNP is not set, ignoring.")
         return
     end
-    -- Respond to switch with our IP and private channel
+    -- Respond to switch with our BNP and private channel
     local response = {
         type = "S_H",
         switch = false,          -- client, not a switch
-        src_ip = myIP,
+        src_ip = myBNP,
         private_channel = PRIVATE_CHANNEL -- or whatever channel we learned from HELLO
     }
 	routerChannel = payload.private_channel --Will ALWAYS override the router channel to account for network expansion
     -- Send back to the switch using the port we received from
     sendPacket(packet.src, response)
-    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with IP " .. myIP)
+    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with BNP " .. myBNP)
 end
 -- ==========================
 -- RECEIVE LOOP
@@ -144,7 +144,7 @@ end
 local function receiveLoop()
     while true do
         local e, side, ch, reply, message, dist = os.pullEvent("modem_message")
-        if type(message)=="table" and myIP and (message.dst==myIP or message.dst=="0") then
+        if type(message)=="table" and myBNP and (message.dst==myBNP or message.dst=="0") then
             local payload = message.payload
             if type(payload)~="table" then
                 debugPrint("Invalid payload from "..tostring(message.src))
@@ -168,7 +168,7 @@ end
 -- CLI LOOP
 -- ==========================
 local function cliLoop()
-    print("Server ready. Commands: set ip <ip>, set password <password>, ip, list hosts, exit")
+    print("Server ready. Commands: set BNP <BNP>, set password <password>, BNP, list hosts, exit")
     while true do
         io.write("> ")
         local line = io.read()
@@ -177,9 +177,9 @@ local function cliLoop()
         for word in line:gmatch("%S+") do table.insert(args,word) end
         local cmd = args[1]
         if cmd=="exit" then return
-        elseif cmd=="set" and args[2]=="ip" and args[3] then
-            myIP=args[3]; saveIP(); print("IP set to "..myIP)
-        elseif cmd=="ip" then print("Current IP: "..tostring(myIP))
+        elseif cmd=="set" and args[2]=="BNP" and args[3] then
+            myBNP=args[3]; saveBNP(); print("BNP set to "..myBNP)
+        elseif cmd=="BNP" then print("Current BNP: "..tostring(myBNP))
         elseif cmd=="debugmode" and args[2] then
             if args[2] == "true" then
                 DEBUG = true
@@ -187,7 +187,7 @@ local function cliLoop()
                 DEBUG = false
 			end
         else
-            print("Commands: set ip <ip>, set password <password>, ip, list hosts, exit")
+            print("Commands: set BNP <BNP>, set password <password>, BNP, list hosts, exit")
         end
     end
 end

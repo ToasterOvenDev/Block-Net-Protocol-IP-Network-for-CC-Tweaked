@@ -2,7 +2,7 @@ package.path = package.path .. ";../Dependencies/?.lua"
 local basalt = require("basalt")
 
 local programs = { --This holds all avaliable programs and their webpage
-    ["File Transfer"] = "wget ftp /Apps/ftp.lua",
+    ["File Transfer"] = "wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Apps/ftp.lua /Apps/ftp.lua",
     ["Bank Client"] = "wget bankClient /Apps/bankClient.lua"
 }
 local installed = {

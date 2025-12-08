@@ -13,7 +13,7 @@ if type(multishell) == "table" and type(multishell.getCurrent) == "function" the
 end
 
 -- CONFIG
-local TOWER_IP_FILE = "ip.txt"
+local TOWER_BNP_FILE = "BNP.txt"
 local DEFAULT_TTL = 8
 local HELLO_INTERVAL = 60
 local NAT_TIMEOUT = 60  -- seconds before NAT entry expires
@@ -45,31 +45,31 @@ local wireless = interfaces[wirelessSide]
 local wired = interfaces[wiredSide]
 print("Wireless: "..wirelessSide..", Wired: "..wiredSide)
 
--- LOAD OR CREATE TOWER IP
-local towerIP
-if fs.exists(TOWER_IP_FILE) then
-    local f = fs.open(TOWER_IP_FILE,"r") towerIP = f.readLine() f.close()
+-- LOAD OR CREATE TOWER BNP
+local towerBNP
+if fs.exists(TOWER_BNP_FILE) then
+    local f = fs.open(TOWER_BNP_FILE,"r") towerBNP = f.readLine() f.close()
 else
-    towerIP = "10.10.10."..os.getComputerID()
-    local f = fs.open(TOWER_IP_FILE,"w") f.writeLine(towerIP) f.close()
-    print("Assigned IP: "..towerIP)
+    towerBNP = "10.10.10."..os.getComputerID()
+    local f = fs.open(TOWER_BNP_FILE,"w") f.writeLine(towerBNP) f.close()
+    print("Assigned BNP: "..towerBNP)
 end
 
 -- STATE
 local seq = 0
 local function makeUID() seq = seq + 1; return tostring(seq) .. "-" .. tostring(os.getComputerID()) end
 local seen = {}
-local hosts = {}           -- learned hosts (IP -> side name)
+local hosts = {}           -- learned hosts (BNP -> side name)
 local lastSeen = {}
-local natTable = {}        -- NAT: client IP -> {originalDst, lastSeen}
-local knownChannels = {}   -- IP -> private_channel learned from HELLO_REPLY / S_H
+local natTable = {}        -- NAT: client BNP -> {originalDst, lastSeen}
+local knownChannels = {}   -- BNP -> private_channel learned from HELLO_REPLY / S_H
 
 -- HELPERS
-local function learnHost(ip, side)
-    if not ip or not side then return end
-    hosts[ip] = side
-    lastSeen[ip] = os.clock()
-    dprint("Learned host "..ip.." via "..side)
+local function learnHost(BNP, side)
+    if not BNP or not side then return end
+    hosts[BNP] = side
+    lastSeen[BNP] = os.clock()
+    dprint("Learned host "..BNP.." via "..side)
 end
 
 local function transmitToSide(side, packet)
@@ -103,7 +103,7 @@ local function handlePacket(packet, incomingSide)
     if type(payload)=="table" then
         if payload.type=="HELLO_REQUEST" then
             -- reply with HELLO_REPLY including our private channel
-            local reply = { uid = makeUID(), src = towerIP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "HELLO_REPLY", private_channel = PRIVATE_CHANNEL } }
+            local reply = { uid = makeUID(), src = towerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "HELLO_REPLY", private_channel = PRIVATE_CHANNEL } }
             -- reply using the sender's known channel if we have it, else broadcast on the incoming side
             transmitToSide(incomingSide, reply)
             dprint("Replied to HELLO_REQUEST from "..tostring(packet.src).." on side "..incomingSide)
@@ -114,8 +114,8 @@ local function handlePacket(packet, incomingSide)
             learnHost(packet.src, incomingSide)
             return
         elseif payload.type=="PING" then
-            if packet.dst==towerIP then
-                local reply = { uid = makeUID(), src = towerIP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "PING_REPLY", message = "pong" } }
+            if packet.dst==towerBNP then
+                local reply = { uid = makeUID(), src = towerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "PING_REPLY", message = "pong" } }
                 transmitToSide(incomingSide, reply)
                 dprint("Ping reply sent to "..packet.src)
                 return
@@ -124,21 +124,21 @@ local function handlePacket(packet, incomingSide)
     end
 
     -- NAT forwarding
-    -- If incoming is wireless -> forward to wired (rewrite src to towerIP)
+    -- If incoming is wireless -> forward to wired (rewrite src to towerBNP)
     if incomingSide == wirelessSide then
         -- record NAT mapping for this client
         natTable[packet.src] = { originalDst = packet.dst, lastSeen = os.clock() }
-        local forwardPacket = { uid = makeUID(), src = towerIP, dst = packet.dst, ttl = packet.ttl, payload = packet.payload }
+        local forwardPacket = { uid = makeUID(), src = towerBNP, dst = packet.dst, ttl = packet.ttl, payload = packet.payload }
         transmitToSide(wiredSide, forwardPacket)
         return
     end
 
     -- incoming from wired: try to map back to client
     if incomingSide == wiredSide then
-        for clientIP, info in pairs(natTable) do
-            -- if the incoming packet looks like a reply from the external dest back to towerIP, forward to client
-            if packet.dst == towerIP and packet.src == info.originalDst then
-                local forwardPacket = { uid = makeUID(), src = packet.src, dst = clientIP, ttl = packet.ttl, payload = packet.payload }
+        for clientBNP, info in pairs(natTable) do
+            -- if the incoming packet looks like a reply from the external dest back to towerBNP, forward to client
+            if packet.dst == towerBNP and packet.src == info.originalDst then
+                local forwardPacket = { uid = makeUID(), src = packet.src, dst = clientBNP, ttl = packet.ttl, payload = packet.payload }
                 transmitToSide(wirelessSide, forwardPacket)
                 info.lastSeen = os.clock()
                 return
@@ -166,10 +166,10 @@ end
 -- CLEANUPS
 local function natCleanup()
     while true do
-        for clientIP, info in pairs(natTable) do
+        for clientBNP, info in pairs(natTable) do
             if os.clock() - info.lastSeen > NAT_TIMEOUT then
-                dprint("Removing stale NAT entry for "..clientIP)
-                natTable[clientIP] = nil
+                dprint("Removing stale NAT entry for "..clientBNP)
+                natTable[clientBNP] = nil
             end
         end
         os.sleep(5)
@@ -195,7 +195,7 @@ end
 -- PERIODIC HELLO
 local function periodicHello()
     while true do
-        local packet = { uid = makeUID(), src = towerIP, dst = "0", ttl = DEFAULT_TTL, payload = { type = "HELLO_REQUEST", private_channel = PRIVATE_CHANNEL } }
+        local packet = { uid = makeUID(), src = towerBNP, dst = "0", ttl = DEFAULT_TTL, payload = { type = "HELLO_REQUEST", private_channel = PRIVATE_CHANNEL } }
         -- broadcast on all interfaces
         for s,_ in pairs(interfaces) do transmitToSide(s, packet) end
         os.sleep(HELLO_INTERVAL)
@@ -218,7 +218,7 @@ local function help()
         "show hosts",
         "show nat",
         "show channels",
-      	"ip",
+      	"BNP",
         "exit"
     }
     print("Cell tower version " .. VERSION .. " commands: ")
@@ -230,7 +230,7 @@ end
 local function cli()
     help()
     while true do
-        write("(tower "..towerIP..")> ")
+        write("(tower "..towerBNP..")> ")
         local line = read()
         if not line then break end
         if line=="exit" then return
@@ -238,7 +238,7 @@ local function cli()
         elseif line=="show hosts" then for h,s in pairs(hosts) do print(h.." -> "..s) end
         elseif line=="show nat" then for c,i in pairs(natTable) do print(c.." -> "..i.originalDst) end
         elseif line=="show channels" then for s,ch in pairs(knownChannels) do print(s.." -> "..tostring(ch)) end
-        elseif line=="ip" then print("Tower IP: "..towerIP)
+        elseif line=="BNP" then print("Tower BNP: "..towerBNP)
         else print("Unknown command.") end
     end
 end
@@ -254,5 +254,5 @@ local function ensureStartup()
 end
 ensureStartup()
 
-print("Cell Tower v"..VERSION.." active at "..towerIP)
+print("Cell Tower v"..VERSION.." active at "..towerBNP)
 parallel.waitForAny(listener, periodicHello, cli, natCleanup, seenCleanup, channelCleanup)

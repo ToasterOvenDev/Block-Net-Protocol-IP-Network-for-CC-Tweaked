@@ -109,10 +109,10 @@ local function sendSwitchHello(side, target_channel, include_routes)
     }
     if include_routes then
         local ip_list = {}
-        for ip, _ in pairs(routing_table) do
-            if ip ~= "default" then table.insert(ip_list, ip) end
+        for BNP, _ in pairs(routing_table) do
+            if BNP ~= "default" then table.insert(ip_list, BNP) end
         end
-        payload.routes = ip_list  -- only send IPs
+        payload.routes = ip_list  -- only send BNPs
     end
 	local packet = {
         uid = makeUID(),
@@ -148,21 +148,21 @@ local function handleSwitchHello(side, packet)
         routing_table[packet.src] = { side = side, channel = payload.private_channel }
         log("Discovered switch " .. packet.src .. " on side " .. side)
 
-        -- If remote switch included routes, add IPs to routing_table
+        -- If remote switch included routes, add BNPs to routing_table
         if payload.routes then
-            for _, ip in ipairs(payload.routes) do
-                if not routing_table[ip] and ip:match("^%d+%.%d+%.%d+%.%d+") then
-                    routing_table[ip] = { side = side, channel = payload.private_channel }
+            for _, BNP in ipairs(payload.routes) do
+                if not routing_table[BNP] and BNP:match("^%d+%.%d+%.%d+%.%d+") then
+                    routing_table[BNP] = { side = side, channel = payload.private_channel }
                 end
             end
             log("Updated routes from switch " .. packet.src)
         end
 
         saveRoutingTable()
-        -- Respond with own routing table (only IPs)
+        -- Respond with own routing table (only BNPs)
         sendSwitchHello(side, payload.private_channel, true)
     else
-        -- Host response: learn IP
+        -- Host response: learn BNP
         if packet.src then
             routing_table[packet.src] = { side = side, channel = payload.private_channel }
             log("Learned host " .. packet.src .. " on side " .. side)
@@ -174,17 +174,18 @@ end
 -- === Commands ===
 local function showRoutingTable()
     log("Routing Table:")
-    for ip, data in pairs(routing_table) do
+    for BNP, data in pairs(routing_table) do
         if type(data) == "table" then
-            print(("  %s -> side=%s ch=%s"):format(ip, tostring(data.side), tostring(data.channel)))
+            print(("  %s -> side=%s ch=%s"):format(BNP, tostring(data.side), tostring(data.channel)))
         else
-            print(("  %s -> [INVALID ENTRY: %s]"):format(ip, tostring(data)))
+            print(("  %s -> [INVALID ENTRY: %s]"):format(BNP, tostring(data)))
         end
     end
 end
 
 local function clearRoutingTable()
     routing_table = {}
+	last_hello = {}
     saveRoutingTable()
     log("Routing table cleared.")
 end

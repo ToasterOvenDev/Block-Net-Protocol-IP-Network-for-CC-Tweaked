@@ -48,28 +48,28 @@ modem.open(PRIVATE_CHANNEL)
 
 local HOSTS_MASTER_FILE = "hosts_master.txt" -- persisted master table
 local BROADCAST_INTERVAL = 600 -- 10 minutes in seconds
-local serverIPFile = "ip.txt"
-local serverIP
+local serverBNPFile = "BNP.txt"
+local serverBNP
 local routerChannel = 1
 
--- load or create IP
-if not fs.exists(serverIPFile) then
-    local f = fs.open(serverIPFile,"w")
+-- load or create BNP
+if not fs.exists(serverBNPFile) then
+    local f = fs.open(serverBNPFile,"w")
     f.writeLine("")
     f.close()
-    serverIP = nil
+    serverBNP = nil
 else
-    local f = fs.open(serverIPFile,"r")
-    serverIP = f.readLine()
+    local f = fs.open(serverBNPFile,"r")
+    serverBNP = f.readLine()
     f.close()
-    if serverIP == "" then serverIP = nil end
+    if serverBNP == "" then serverBNP = nil end
 end
 
 -- ==========================
 -- MASTER HOST TABLE
 -- structure:
 -- hosts = {
---   ["name"] = { ip = "10.10.10.2", flags = {"router","game"} },
+--   ["name"] = { BNP = "10.10.10.2", flags = {"router","game"} },
 --   ...
 -- }
 -- ==========================
@@ -108,10 +108,10 @@ local function makeDiff(oldHosts, newHosts)
         if not oldHosts[k] then
             diff.added[k] = v
         else
-            -- compare ip and flags
+            -- compare BNP and flags
             local old = oldHosts[k]
             local changed = false
-            if old.ip ~= v.ip then changed = true end
+            if old.BNP ~= v.BNP then changed = true end
             -- flags compare
             local of = old.flags or {}
             local nf = v.flags or {}
@@ -133,19 +133,19 @@ local function makeUID()
 end
 
 local function broadcastAll(payload)
-    local packet = { uid = makeUID(), src = serverIP or "0", dst = "0", ttl = 8, payload = payload }
+    local packet = { uid = makeUID(), src = serverBNP or "0", dst = "0", ttl = 8, payload = payload }
     modem.transmit(1,1,packet)
 end
 
 local function sendDirect(dst, payload)
-    local packet = { uid = makeUID(), src = serverIP or "0", dst = dst, ttl = 8, payload = payload }
+    local packet = { uid = makeUID(), src = serverBNP or "0", dst = dst, ttl = 8, payload = payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
 end
 
 -- HANDLERS
 
 local function replyHello(requester)
-    if not serverIP then return end
+    if not serverBNP then return end
     sendDirect(requester, { type="HELLO_REPLY", private_channel = PRIVATE_CHANNEL })
     debugPrint("Replied to HELLO_REQUEST from "..requester)
 end
@@ -154,22 +154,22 @@ local function replySwitch(side, packet)
     local payload = packet.payload
     -- Only respond if this is a switch hello from a switch
     if not payload.switch then return end
-    -- Make sure the client has an IP
-    if not serverIP then
-        debugPrint("Received S_H from switch but server IP is not set, ignoring.")
+    -- Make sure the client has an BNP
+    if not serverBNP then
+        debugPrint("Received S_H from switch but server BNP is not set, ignoring.")
         return
     end
-    -- Respond to switch with our IP and private channel
+    -- Respond to switch with our BNP and private channel
     local response = {
         type = "S_H",
         switch = false,          -- client, not a switch
-        src_ip = serverIP,
+        src_ip = serverBNP,
         private_channel = PRIVATE_CHANNEL -- or whatever channel we learned from HELLO
     }
 	routerChannel = payload.private_channel --Will ALWAYS override the router channel to account for network expansion
     -- Send back to the switch using the port we received from
     sendDirect(packet.src, response)
-    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with IP " .. serverIP)
+    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with BNP " .. serverBNP)
 end
 -- On boot broadcast full hosts
 local function broadcastFullHosts()
@@ -205,7 +205,7 @@ local function receiveLoop()
             else
                 if payload.type == "DISCOVER_HOST_SERVER" then
                     -- reply to discovery: HOST_SERVER_HERE
-                    local server_ip = serverIP or (hosts and (next(hosts) and (hosts[next(hosts)].ip) or nil) )
+                    local server_ip = serverBNP or (hosts and (next(hosts) and (hosts[next(hosts)].BNP) or nil) )
                     if server_ip then
                         sendDirect(message.src, { type = "HOST_SERVER_HERE", server_ip = server_ip, private_channel = PRIVATE_CHANNEL })
                         print("Replied HOST_SERVER_HERE to "..message.src)
@@ -236,12 +236,12 @@ end
 -- ==========================
 local function printHelp()
     print([[HostServer Commands:
-  addhost <name> <ip> [flags...]
+  addhost <name> <BNP> [flags...]
   delhost <name>
   listhosts
   broadcast
-  ip
-  setip <ip>
+  BNP
+  setip <BNP>
   exit
   help
   debugmode
@@ -260,20 +260,20 @@ local function cliLoop()
         elseif cmd == "exit" then return
         elseif cmd == "listhosts" then
             for name, info in pairs(hosts) do
-                print(name.." -> "..info.ip.." flags: "..table.concat(info.flags or {}, ","))
+                print(name.." -> "..info.BNP.." flags: "..table.concat(info.flags or {}, ","))
             end
         elseif cmd == "addhost" then
-            -- parse: addhost name ip [flags...]
-            local name, ip, flagsStr = rest:match("^(%S+)%s+(%S+)%s*(.*)$")
-            if not name or not ip then print("Usage: addhost <name> <ip> [flags...]")
+            -- parse: addhost name BNP [flags...]
+            local name, BNP, flagsStr = rest:match("^(%S+)%s+(%S+)%s*(.*)$")
+            if not name or not BNP then print("Usage: addhost <name> <BNP> [flags...]")
             else
                 local flags = {}
                 if flagsStr and flagsStr ~= "" then
                     for f in flagsStr:gmatch("%S+") do table.insert(flags, f) end
                 end
                 local oldHosts = {}
-                for k,v in pairs(hosts) do oldHosts[k] = { ip = v.ip, flags = { table.unpack(v.flags or {}) } } end
-                hosts[name] = { ip = ip, flags = flags }
+                for k,v in pairs(hosts) do oldHosts[k] = { BNP = v.BNP, flags = { table.unpack(v.flags or {}) } } end
+                hosts[name] = { BNP = BNP, flags = flags }
                 saveMaster()
                 local diff = makeDiff(oldHosts, hosts)
                 broadcastDiff(diff)
@@ -285,7 +285,7 @@ local function cliLoop()
             else
                 if hosts[name] then
                     local oldHosts = {}
-                    for k,v in pairs(hosts) do oldHosts[k] = { ip = v.ip, flags = { table.unpack(v.flags or {}) } } end
+                    for k,v in pairs(hosts) do oldHosts[k] = { BNP = v.BNP, flags = { table.unpack(v.flags or {}) } } end
                     hosts[name] = nil
                     saveMaster()
                     local diff = makeDiff(oldHosts, hosts)
@@ -296,16 +296,16 @@ local function cliLoop()
         elseif cmd == "broadcast" then
             broadcastFullHosts()
         elseif cmd == "setip" then
-            local ip = rest:match("^(%S+)")
-            if ip then
-                serverIP = ip
-                local f = fs.open(serverIPFile,"w")
-                f.writeLine(serverIP)
+            local BNP = rest:match("^(%S+)")
+            if BNP then
+                serverBNP = BNP
+                local f = fs.open(serverBNPFile,"w")
+                f.writeLine(serverBNP)
                 f.close()
-                print("Server IP set to "..serverIP)
-            else print("Usage: setip <ip>") end
-        elseif cmd == "ip" then
-            print("Server IP: "..tostring(serverIP))
+                print("Server BNP set to "..serverBNP)
+            else print("Usage: setip <BNP>") end
+        elseif cmd == "BNP" then
+            print("Server BNP: "..tostring(serverBNP))
         elseif cmd == "debugmode" then
            	local tf = rest:match("^(%S+)")
             if tf == "true" then

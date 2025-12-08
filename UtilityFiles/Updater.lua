@@ -26,29 +26,29 @@ local function cliLoop()
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
         if cmd=="router" then -- Installs router
-       		update("router.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Router.lua")
+       		update("router.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/Router.lua")
 			print("Routers can also be run with servers installed. Please update any server files on device.")
 			break
         elseif cmd=="client" then -- Installs CLI version of client
-       		update("client.lua", "https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client.lua")
+       		update("client.lua", "https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/Client.lua")
 			break
 		elseif cmd=="wirelessClient" then -- Installs Wireless Client
-        	update("wirelessClient.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WirelessNetwork/wirelessClient.lua")
+        	update("wirelessClient.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WirelessNetwork/wirelessClient.lua")
 			break
         elseif cmd=="switch" then -- Installs wireless Client
-            update("switch.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/switch.lua")
+            update("switch.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/switch.lua")
 			break
         elseif cmd=="fileServer" then -- Installs File Server
-            update("fileServer.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/FileServer.lua")
+            update("fileServer.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/FileServer.lua")
 			break
         elseif cmd=="hostServer" then -- Installs Host Server
-            update("hostServer.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/hostServer.lua")
+            update("hostServer.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/hostServer.lua")
 			break
 		elseif cmd=="cellTower" then -- Installs Cell Tower
-            update("cellTower.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WirelessNetwork/cellTower.lua")
+            update("cellTower.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WirelessNetwork/cellTower.lua")
 			break
         elseif cmd=="updater" then -- Updates the Updater to latest version
-            update("updater.lua","https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/UtilityFiles/Updater.lua")
+            update("updater.lua","https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/UtilityFiles/Updater.lua")
 			break
         elseif cmd=="quit" then -- Aborts the installer
             break

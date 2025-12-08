@@ -1,8 +1,8 @@
 -- client.lua Version 1.8
 -- Compatible with HostServer 1.1+ diff update system
 -- Compatible with Switch 2.0 S_H (switch hello) discovery system
--- CC:Tweaked wired client for IP router & server systems
--- Supports hostname keywords, HELLO_REPLY only, secure plaintext file transfer, standardized IP file
+-- CC:Tweaked wired client for BNP router & server systems
+-- Supports hostname keywords, HELLO_REPLY only, secure plaintext file transfer, standardized BNP file
 -- Automatic multishell self-launch and host sync updates
 -- Multi-channel system support
 -- startup file automatically added
@@ -52,31 +52,31 @@ end
 modem.open(1)
 modem.open(PRIVATE_CHANNEL)
 
-local IP_FILE = "ip.txt"
+local BNP_FILE = "BNP.txt"
 local HOSTS_FILE = "hosts.txt"
 local SERVER_FILE = "host_server_ip.txt"
 
-local myIP
+local myBNP
 local hosts = {}
-local hostServerIP
+local hostServerBNP
 
--- IP MANAGEMENT
+-- BNP MANAGEMENT
 
-if not fs.exists(IP_FILE) then
-    local f = fs.open(IP_FILE,"w") f.writeLine("") f.close()
+if not fs.exists(BNP_FILE) then
+    local f = fs.open(BNP_FILE,"w") f.writeLine("") f.close()
     term.setTextColor(colors.yellow)
-    print(IP_FILE.." created. Use CLI command 'set ip <ip>' to assign IP before networking.")
+    print(BNP_FILE.." created. Use CLI command 'set BNP <BNP>' to assign BNP before networking.")
     term.setTextColor(colors.white)
 else
-    local f = fs.open(IP_FILE,"r")
-    myIP = f.readLine()
+    local f = fs.open(BNP_FILE,"r")
+    myBNP = f.readLine()
     f.close()
-    if myIP == "" then myIP = nil end
+    if myBNP == "" then myBNP = nil end
 end
 
-local function saveIP()
-    local f = fs.open(IP_FILE,"w")
-    f.writeLine(myIP or "")
+local function saveBNP()
+    local f = fs.open(BNP_FILE,"w")
+    f.writeLine(myBNP or "")
     f.close()
 end
 
@@ -117,20 +117,20 @@ loadHosts()
 
 
 -- HOST SERVER DISCOVERY
-local function saveServerIP()
+local function saveServerBNP()
     local f = fs.open(SERVER_FILE, "w")
-    f.writeLine(hostServerIP or "")
+    f.writeLine(hostServerBNP or "")
     f.close()
 end
 
-local function loadServerIP()
+local function loadServerBNP()
     if fs.exists(SERVER_FILE) then
         local f = fs.open(SERVER_FILE, "r")
-        hostServerIP = f.readLine()
+        hostServerBNP = f.readLine()
         f.close()
     end
 end
-loadServerIP()
+loadServerBNP()
 
 -- PACKET UTILITIES
 local seq = 0
@@ -140,14 +140,14 @@ local function makeUID()
 end
 
 local function resolveAddress(input)
-    if hosts[input] and hosts[input].ip then return hosts[input].ip end
+    if hosts[input] and hosts[input].BNP then return hosts[input].BNP end
     return input
 end
 
 local function sendPacket(dst, payload)
-    if not myIP then
+    if not myBNP then
         term.setTextColor(colors.yellow)
-        print("Set your IP first with 'set ip <ip>' before sending packets.")
+        print("Set your BNP first with 'set BNP <BNP>' before sending packets.")
         term.setTextColor(colors.white)
         return
     end
@@ -158,19 +158,19 @@ local function sendPacket(dst, payload)
         term.setTextColor(colors.white)
         return
     end
-    local packet = { uid=makeUID(), src=myIP, dst=resolved, ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
     debugPrint("Sent packet to "..dst.." on channel "..routerChannel)
 end
 
 local function broadcast(payload)
-    local packet = { uid=makeUID(), src=myIP or "unknown", dst="0", ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP or "unknown", dst="0", ttl=8, payload=payload }
     modem.transmit(1,1,packet)
 end
 
 -- HELLO REPLY
 local function replyHello(requester)
-    if not myIP then return end
+    if not myBNP then return end
     sendPacket(requester, { type="HELLO_REPLY", private_channel = PRIVATE_CHANNEL })
     debugPrint("Replied to HELLO_REQUEST from "..requester)
 end
@@ -179,12 +179,12 @@ local function switchReply(side,packet)
     -- Only respond if this is a switch hello from a switch
     local payload = packet.payload
     if not payload.switch then return end
-    -- Make sure the client has an IP
-    if not myIP then
-        debugPrint("Received S_H from switch but client IP is not set, ignoring.")
+    -- Make sure the client has an BNP
+    if not myBNP then
+        debugPrint("Received S_H from switch but client BNP is not set, ignoring.")
         return
     end
-    -- Respond to switch with our IP and private channel
+    -- Respond to switch with our BNP and private channel
     local response = {
         type = "S_H",
         switch = false,          -- client, not a switch
@@ -194,7 +194,7 @@ local function switchReply(side,packet)
 	routerChannel = payload.private_channel
     -- Send back to the switch using the port we received from
     sendPacket(packet.src, response)
-    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with IP " .. myIP)
+    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with BNP " .. myBNP)
 end
 
 -- FILE TRANSFER
@@ -251,9 +251,9 @@ local function discoverHostServer()
 end
 
 local function requestFullHosts()
-    if hostServerIP then
-        debugPrint("[HostSync] Requesting full host table from " .. hostServerIP)
-        sendPacket(hostServerIP, { type="REQUEST_HOSTS" })
+    if hostServerBNP then
+        debugPrint("[HostSync] Requesting full host table from " .. hostServerBNP)
+        sendPacket(hostServerBNP, { type="REQUEST_HOSTS" })
     else
         discoverHostServer()
     end
@@ -264,7 +264,7 @@ local function receiveLoop()
     while true do
         local _, _, _, _, message = os.pullEvent("modem_message")
         debugPrint("Recieved packet " .. textutils.serialize(message) .. " attempting to handle")
-        if type(message) == "table" and type(message.payload) == "table" and (message.dst == myIP or message.dst == "0") then
+        if type(message) == "table" and type(message.payload) == "table" and (message.dst == myBNP or message.dst == "0") then
             local payload = message.payload
 
             if payload.type == "HELLO_REQUEST" then -- Router Discovery 
@@ -329,11 +329,11 @@ local function receiveLoop()
                 handleUpdateHosts(payload)
             elseif payload.type == "HOSTS_DIFF" then --Updates Host name translations by adding, removing, or editing hosts.txt
                 handleHostsDiff(payload)
-            elseif payload.type == "HOST_SERVER_HERE" then -- Remembers host server IP
+            elseif payload.type == "HOST_SERVER_HERE" then -- Remembers host server BNP
                 if payload.server_ip then
-                    hostServerIP = payload.server_ip
-                    saveServerIP()
-                    debugPrint("[HostSync] Host server discovered at " .. hostServerIP)
+                    hostServerBNP = payload.server_ip
+                    saveServerBNP()
+                    debugPrint("[HostSync] Host server discovered at " .. hostServerBNP)
                     requestFullHosts()
                 end
             else --Packet isn't handled by client.lua (other files could handle the packet though)
@@ -348,13 +348,12 @@ local colorsList = { colors.cyan, colors.yellow, colors.green, colors.magenta }
 
 local function printCommands() -- prints commands with different colors
     local cmds = {
-        "set ip <ip>",
+        "set BNP <BNP>",
         "ping <host>",
         "getfile <server> <filename> <password>",
         "list hosts",
         "sync hosts",
-        "ip",
-        "run <program> [args]",
+        "BNP",
         "exit",
         "debugmode <true|false>"
     }
@@ -376,22 +375,22 @@ local function cliLoop() --Command Line Interface loop
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
         if cmd == "exit" then return
-        elseif cmd == "set" and args[2] == "ip" and args[3] then
-            myIP = args[3]; saveIP(); print("IP set to "..myIP)
+        elseif cmd == "set" and args[2] == "BNP" and args[3] then
+            myBNP = args[3]; saveBNP(); print("BNP set to "..myBNP)
         elseif cmd == "ping" and args[2] then
             sendPacket(args[2], { type="PING" }); print("Ping sent to "..args[2])
         elseif cmd == "list" and args[2] == "hosts" then
             print("Known hosts:")
             for k,v in pairs(hosts) do
-                print(("  %-10s -> %s"):format(k, v.ip or "??"))
+                print(("  %-10s -> %s"):format(k, v.BNP or "??"))
             end
         elseif cmd == "sync" and args[2] == "hosts" then
             requestFullHosts()
         elseif cmd == "getfile" and args[2] and args[3] and args[4] then
-            sendACK(args[2], args[4])
+            sendACK(args[2], args[4] or "")
             requestedFile = args[3]
-        elseif cmd == "ip" then
-            print("Current IP: "..tostring(myIP))
+        elseif cmd == "BNP" then
+            print("Current BNP: "..tostring(myBNP))
         elseif cmd == "debugmode" and args[2] then
     		if args[2] == "false" then
         		DEBUG = false; print("Debug mode OFF")
@@ -403,6 +402,8 @@ local function cliLoop() --Command Line Interface loop
             	print("Error: Unrecognized argument | useage: debugmode true || debugmode false")
             	term.setTextColor(colors.white)
             end
+		elseif cmd == "clear" or cmd == "clr" then
+			term.clear()
         else
             term.setTextColor(colors.red)
             print("Error: Unrecognized command")
@@ -431,5 +432,5 @@ end
 
 ensureStartup()
 
-if not hostServerIP then discoverHostServer() else requestFullHosts() end -- Makes sure that it's hosts.txt is updated fully on boot
+if not hostServerBNP then discoverHostServer() else requestFullHosts() end -- Makes sure that it's hosts.txt is updated fully on boot
 parallel.waitForAny(receiveLoop, cliLoop) --runs CLI and the listener for packets at once

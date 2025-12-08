@@ -1,0 +1,21 @@
+{
+  EvilIncFTPSVR = {
+    flags = {
+      "EvilINC",
+      "FTPSVR",
+    },
+    ip = "201.200.40.1",
+  },
+  hostServer = {
+    flags = {
+      "HSTSVR",
+    },
+    ip = "201.200.10.2",
+  },
+  fileServer = {
+    flags = {
+      "FTPSVR",
+    },
+    ip = "201.200.10.1",
+  },
+}

@@ -66,9 +66,9 @@ local function ensureStartup()
         startupContent = f.readAll()
         f.close()
     end
-    if not startupContent:match("shell%.run%(\'clientGUI.lua\'%)") then
+    if not startupContent:match("shell%.run%(\'toasterOvenOS.lua\'%)") then
         local f = fs.open("startup","a")
-        f.writeLine("shell.run('clientGUI.lua')")
+        f.writeLine("shell.run('toasterOvenOS.lua')")
         f.close()
     end
 end
@@ -81,19 +81,22 @@ local function barebones()
     os.sleep(1)
     local yn = areYouSure()
     if yn then
-        print("Downlaoding Barebones Package")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/Depedencies/client.lua client.lua") 
+        print("Downlaoding Full Package")
+        print("Starting with Dependencies")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Dependencies/client.lua client.lua")
         fs.move("client.lua","/Dependencies/")
         print("Installed Client")
         shell.run("wget run https://raw.githubusercontent.com/Pyroxenium/Basalt/refs/heads/master/docs/install.lua release latest.lua")
         fs.move("basalt.lua","/Dependencies/")
         print("Installed Basalt")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/clientGUI.lua clientGUI.lua")
+        print("ToasterOvenOS Installing")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/toasterOvenOS.lua clientGUI.lua")
         print("Installed GUI")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/Apps/installer.lua installer.lua")
-        fs.move("installer.lua", "/Apps/")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Apps/intaller.lua installer.lua")
         print("Installed Installer (for addons)")
-        
+        print("OS Installed")
+
+        print("Ensuring that OS starts on computer boot")
         ensureStartup()
         return false
     else
@@ -111,18 +114,22 @@ local function essentials()
     os.sleep(1)
     local yn = areYouSure()
     if yn then
-        print("Downlaoding Essentials Package")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/Depedencies/client.lua client.lua")
+        print("Downlaoding Full Package")
+        print("Starting with Dependencies")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Dependencies/client.lua client.lua")
         fs.move("client.lua","/Dependencies/")
         print("Installed Client")
         shell.run("wget run https://raw.githubusercontent.com/Pyroxenium/Basalt/refs/heads/master/docs/install.lua release latest.lua")
         fs.move("basalt.lua","/Dependencies/")
         print("Installed Basalt")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/clientGUI.lua clientGUI.lua")
+        print("ToasterOvenOS Installing")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/toasterOvenOS.lua clientGUI.lua")
         print("Installed GUI")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/Apps/installer.lua installer.lua")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Apps/intaller.lua installer.lua")
         print("Installed Installer (for addons)")
+        print("OS Installed")
 
+        print("Ensuring that OS starts on computer boot")
         ensureStartup()
         return false
     else
@@ -141,17 +148,21 @@ local function full()
     local yn = areYouSure()
     if yn then
         print("Downlaoding Full Package")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/Depedencies/client.lua client.lua")
+        print("Starting with Dependencies")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Dependencies/client.lua client.lua")
         fs.move("client.lua","/Dependencies/")
         print("Installed Client")
         shell.run("wget run https://raw.githubusercontent.com/Pyroxenium/Basalt/refs/heads/master/docs/install.lua release latest.lua")
         fs.move("basalt.lua","/Dependencies/")
         print("Installed Basalt")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/clientGUI.lua clientGUI.lua")
+        print("ToasterOvenOS Installing")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/toasterOvenOS.lua clientGUI.lua")
         print("Installed GUI")
-        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/CC-Tweaked-IP-Network/refs/heads/main/WiredNetwork/Client%20GUI/Apps/installer.lua installer.lua")
+        shell.run("wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/Apps/intaller.lua installer.lua")
         print("Installed Installer (for addons)")
+        print("OS Installed")
 
+        print("Ensuring that OS starts on computer boot")
         ensureStartup()
         return false
     else

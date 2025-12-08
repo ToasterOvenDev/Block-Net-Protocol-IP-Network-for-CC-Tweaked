@@ -52,16 +52,16 @@ openChannel(1)
 openChannel(PRIVATE_CHANNEL)
 
 -- FILES
-local IP_FILE = "ip.txt"
+local BNP_FILE = "BNP.txt"
 local HOSTS_FILE = "hosts.txt"
 local SERVER_FILE = "host_server_ip.txt"
 local CONNECTED_TOWER_FILE = "connected_tower.txt"
 
 -- STATE
-local myIP = nil
+local myBNP = nil
 local hosts = {}
-local hostServerIP = nil
-local connectedTowerIP = nil
+local hostServerBNP = nil
+local connectedTowerBNP = nil
 local towerSignal = math.huge -- lower = stronger (closer)
 local TOWER_TIMEOUT = 30
 local lastTowerContact = os.clock()
@@ -73,18 +73,18 @@ local function makeUID()
     return tostring(seq) .. "-" .. tostring(os.getComputerID())
 end
 
-local function saveIP()
-    local f = fs.open(IP_FILE,"w") f.writeLine(myIP or "") f.close()
+local function saveBNP()
+    local f = fs.open(BNP_FILE,"w") f.writeLine(myBNP or "") f.close()
 end
-local function loadIP()
-    if fs.exists(IP_FILE) then
-        local f = fs.open(IP_FILE,"r")
-        myIP = f.readLine()
+local function loadBNP()
+    if fs.exists(BNP_FILE) then
+        local f = fs.open(BNP_FILE,"r")
+        myBNP = f.readLine()
         f.close()
-        if myIP == "" then myIP = nil end
+        if myBNP == "" then myBNP = nil end
     end
 end
-loadIP()
+loadBNP()
 
 local function saveHosts()
     local f = fs.open(HOSTS_FILE, "w")
@@ -108,47 +108,47 @@ local function loadHosts()
 end
 loadHosts()
 
-local function saveServerIP()
+local function saveServerBNP()
     local f = fs.open(SERVER_FILE, "w")
-    f.writeLine(hostServerIP or "")
+    f.writeLine(hostServerBNP or "")
     f.close()
 end
-local function loadServerIP()
+local function loadServerBNP()
     if fs.exists(SERVER_FILE) then
         local f = fs.open(SERVER_FILE, "r")
-        hostServerIP = f.readLine()
+        hostServerBNP = f.readLine()
         f.close()
-        if hostServerIP == "" then hostServerIP = nil end
+        if hostServerBNP == "" then hostServerBNP = nil end
     end
 end
-loadServerIP()
+loadServerBNP()
 
-local function saveTowerIP()
+local function saveTowerBNP()
     local f = fs.open(CONNECTED_TOWER_FILE,"w")
-    f.writeLine(connectedTowerIP or "")
+    f.writeLine(connectedTowerBNP or "")
     f.close()
 end
-local function loadTowerIP()
+local function loadTowerBNP()
     if fs.exists(CONNECTED_TOWER_FILE) then
         local f = fs.open(CONNECTED_TOWER_FILE,"r")
-        connectedTowerIP = f.readLine()
+        connectedTowerBNP = f.readLine()
         f.close()
-        if connectedTowerIP == "" then connectedTowerIP = nil end
+        if connectedTowerBNP == "" then connectedTowerBNP = nil end
     end
 end
-loadTowerIP()
+loadTowerBNP()
 
 -- ADDRESS RESOLUTION
 local function resolveAddress(input)
     if not input then return nil end
-    if hosts[input] and hosts[input].ip then return hosts[input].ip end
+    if hosts[input] and hosts[input].BNP then return hosts[input].BNP end
     return input
 end
 
 -- PACKET UTILITIES (multi-channel aware)
 local function sendPacket(dst, payload)
-    if not myIP then
-        print("Set your IP with 'set ip <ip>' first.")
+    if not myBNP then
+        print("Set your BNP with 'set BNP <BNP>' first.")
         return
     end
     local resolved = resolveAddress(dst)
@@ -158,7 +158,7 @@ local function sendPacket(dst, payload)
         term.setTextColor(colors.white)
         return
     end
-    local packet = { uid = makeUID(), src = myIP, dst = resolved, ttl = 8, payload = payload }
+    local packet = { uid = makeUID(), src = myBNP, dst = resolved, ttl = 8, payload = payload }
     -- ensure routerChannel is open
     openChannel(routerChannel)
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
@@ -166,13 +166,13 @@ local function sendPacket(dst, payload)
 end
 
 local function broadcast(payload)
-    if myIP then
-    	local packet = { uid = makeUID(), src = myIP or "unknown", dst = "0", ttl = 8, payload = payload }
+    if myBNP then
+    	local packet = { uid = makeUID(), src = myBNP or "unknown", dst = "0", ttl = 8, payload = payload }
     	-- use public broadcast for discovery
     	modem.transmit(1, 1, packet)
     	debugPrint("Broadcasted on public channel 1, payload: "..tostring(payload.type or "<unknown>"))
     else
-        print("Set your IP with 'set ip <ip>' first.")
+        print("Set your BNP with 'set BNP <BNP>' first.")
     end
    	
 end
@@ -185,45 +185,45 @@ end
 
 local function selectBestTower(src, distance, towerChannel)
     if oldTower == nil or oltTower == "" then
-        oldTower = connectedTowerIP
+        oldTower = connectedTowerBNP
     end
     if type(src) ~= "string" then return end
     if not src:match("^10%.10%.10%.") then
-        debugPrint("Ignoring non-tower IP: " .. tostring(src))
+        debugPrint("Ignoring non-tower BNP: " .. tostring(src))
         return
     end
     if distance < towerSignal then
         towerSignal = distance
-        connectedTowerIP = src
+        connectedTowerBNP = src
         lastTowerContact = os.clock()
         -- If tower supplied its private/router channel, adopt it
         if type(towerChannel) == "number" then
             routerChannel = towerChannel
             openChannel(routerChannel)
         end
-        saveTowerIP()
+        saveTowerBNP()
         debugPrint(("Connected to tower %s (signal %.1f blocks) on channel %s"):format(src, distance, tostring(routerChannel)))
     end
-    if oldTower == connectedTowerIP then
-        debugPrint("Connected to tower "..tostring(connectedTowerIP).." (signal "..string.format("%.1f", distance)..")")
-    elseif oldTower ~= connectedTowerIP then
-        print("Connected to new tower "..tostring(connectedTowerIP).." (signal "..string.format("%.1f", distance)..")")
+    if oldTower == connectedTowerBNP then
+        debugPrint("Connected to tower "..tostring(connectedTowerBNP).." (signal "..string.format("%.1f", distance)..")")
+    elseif oldTower ~= connectedTowerBNP then
+        print("Connected to new tower "..tostring(connectedTowerBNP).." (signal "..string.format("%.1f", distance)..")")
     end
 end
 
 local function checkTowerTimeout()
-    if connectedTowerIP and os.clock() - lastTowerContact > TOWER_TIMEOUT then
-        oldTower = connectedTowerIP
-        connectedTowerIP = nil
+    if connectedTowerBNP and os.clock() - lastTowerContact > TOWER_TIMEOUT then
+        oldTower = connectedTowerBNP
+        connectedTowerBNP = nil
         towerSignal = math.huge
         discoverTowers()
         os.sleep(1)
-        if connectedTowerIP == nil then
-        	print("Lost connection to Network all IP functionality disabled")
-        elseif oldTower == connectedTowerIP then
-            debugPrint("Connected to tower "..tostring(connectedTowerIP).." (signal "..string.format("%.1f", towerSignal)..")")
-        elseif oldTower ~= connectedTowerIP then
-        	print("Connected to new tower "..tostring(connectedTowerIP).." (signal "..string.format("%.1f", towerSignal)..")")
+        if connectedTowerBNP == nil then
+        	print("Lost connection to Network all BNP functionality disabled")
+        elseif oldTower == connectedTowerBNP then
+            debugPrint("Connected to tower "..tostring(connectedTowerBNP).." (signal "..string.format("%.1f", towerSignal)..")")
+        elseif oldTower ~= connectedTowerBNP then
+        	print("Connected to new tower "..tostring(connectedTowerBNP).." (signal "..string.format("%.1f", towerSignal)..")")
         end
     end
 end
@@ -286,9 +286,9 @@ local function discoverHostServer()
 end
 
 local function requestFullHosts()
-    if hostServerIP then
-        debugPrint("[HostSync] Requesting full host table from " .. tostring(hostServerIP))
-        sendPacket(hostServerIP, { type = "REQUEST_HOSTS" })
+    if hostServerBNP then
+        debugPrint("[HostSync] Requesting full host table from " .. tostring(hostServerBNP))
+        sendPacket(hostServerBNP, { type = "REQUEST_HOSTS" })
     else
         discoverHostServer()
     end
@@ -296,7 +296,7 @@ end
 
 -- HELLO reply (respond to router/tower discovery)
 local function replyHello(requester, requesterPrivate)
-    if not myIP then return end
+    if not myBNP then return end
     local payload = { type = "HELLO_REPLY", private_channel = PRIVATE_CHANNEL }
     -- If we are wireless and have connected tower, include that info? leave standard
     sendPacket(requester, payload)
@@ -313,8 +313,8 @@ local function receiveLoop()
         else
             local payload = message.payload
             -- Only accept if destined to us, or broadcast "0"
-            if message.dst == myIP or message.dst == "0" then
-                -- Track tower contact if message came with distance and from a tower-like IP
+            if message.dst == myBNP or message.dst == "0" then
+                -- Track tower contact if message came with distance and from a tower-like BNP
                 if distance and type(distance) == "number" then
                     -- treat messages from 10.10.10.x as towers for contact updates
                     if type(message.src) == "string" and message.src:match("^10%.10%.10%.") then
@@ -392,9 +392,9 @@ local function receiveLoop()
                     handleHostsDiff(payload)
                 elseif payload.type == "HOST_SERVER_HERE" then
                     if payload.server_ip then
-                        hostServerIP = payload.server_ip
-                        saveServerIP()
-                        debugPrint("[HostSync] Host server discovered at " .. tostring(hostServerIP))
+                        hostServerBNP = payload.server_ip
+                        saveServerBNP()
+                        debugPrint("[HostSync] Host server discovered at " .. tostring(hostServerBNP))
                         requestFullHosts()
                     end
                 elseif payload.type == "DISCOVER_HOST_SERVER" then
@@ -416,13 +416,13 @@ local colorsList = { colors.cyan, colors.yellow, colors.green, colors.magenta }
 
 local function printCommands()
     local cmds = {
-        "set ip <ip>",
-        "ping <host/ip>",
+        "set BNP <BNP>",
+        "ping <host/BNP>",
         "getfile <server> <filename> <password>",
         "list hosts",
         "sync hosts",
         "tower",
-        "ip",
+        "BNP",
         "exit",
         "debugmode <true|false>"
     }
@@ -444,27 +444,27 @@ local function cliLoop()
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
         if cmd == "exit" then return
-        elseif cmd == "set" and args[2] == "ip" and args[3] then
-            myIP = args[3]; saveIP(); print("IP set to "..tostring(myIP))
+        elseif cmd == "set" and args[2] == "BNP" and args[3] then
+            myBNP = args[3]; saveBNP(); print("BNP set to "..tostring(myBNP))
         elseif cmd == "ping" and args[2] then
-            if connectedTowerIP then
+            if connectedTowerBNP then
                 sendPacket(args[2], { type = "PING" })
-                print("Ping sent via tower "..tostring(connectedTowerIP))
+                print("Ping sent via tower "..tostring(connectedTowerBNP))
             else
                 print("No connected tower. Use 'tower' to scan.")
             end
         elseif cmd == "list" and args[2] == "hosts" then
             print("Known hosts:")
             for k,v in pairs(hosts) do
-                print(("  %-12s -> %s"):format(k, v.ip or "??"))
+                print(("  %-12s -> %s"):format(k, v.BNP or "??"))
             end
         elseif cmd == "sync" and args[2] == "hosts" then
             requestFullHosts()
         elseif cmd == "getfile" and args[2] and args[3] and args[4] then
             sendACK(args[2], args[4])
             requestedFile = args[3]
-        elseif cmd == "ip" then
-            print("Current IP: "..tostring(myIP))
+        elseif cmd == "BNP" then
+            print("Current BNP: "..tostring(myBNP))
         elseif cmd == "tower" then
             discoverTowers()
         elseif cmd == "debugmode" and args[2] then
@@ -485,8 +485,8 @@ local function cliLoop()
 end
 
 -- STARTUP BEHAVIOR
--- If we have no host server IP, try to discover it (goes over public/tower)
-if not hostServerIP then
+-- If we have no host server BNP, try to discover it (goes over public/tower)
+if not hostServerBNP then
     discoverHostServer()
 else
     requestFullHosts()
@@ -537,6 +537,7 @@ local function crashDebug(name, fn)
     local ok, err = pcall(fn)
     if not ok then
         printError("[CRASH in " .. name .. "] " .. tostring(err))
+        os.sleep(30)
     end
 end
 
@@ -546,6 +547,3 @@ parallel.waitForAny(
     function() crashDebug("cliLoop", cliLoop) end,
     function() crashDebug("cleanupChannels", cleanupChannels) end
 )
-
-printError("[CLIENT STOPPED] parallel.waitForAny returned!")
-os.sleep(60)
