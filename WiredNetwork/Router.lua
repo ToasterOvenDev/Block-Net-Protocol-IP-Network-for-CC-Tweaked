@@ -160,7 +160,7 @@ local function loadRouterServices()
     local f = fs.open("services.txt","r")
     local services = textutils.unserialize(f.readAll())
     f.close()
-    if services == "" then
+    if services == "" or services == nil then -- I don't know why this file in particular needed the check for nil instead of empty, but that's why it's different
         RDP = false
         RDPSides = {}
         RDPNeighbors = {}
