@@ -230,7 +230,7 @@ end
 local function cli()
     help()
     while true do
-        write("(tower "..towerBNP..")> ")
+        io.write("(Cell Tower)> ")
         local line = read()
         if not line then break end
         if line=="exit" then return
