@@ -128,6 +128,12 @@ local function loadRoutingTable()
     end
 end
 
+if not fs.exists("services.txt") then
+    local f = fs.open("services.txt","w")
+    f.write("")
+    f.close()
+end
+
 -- Save services
 local function saveRouterServices()
     local services = {
@@ -154,19 +160,33 @@ local function loadRouterServices()
     local f = fs.open("services.txt","r")
     local services = textutils.unserialize(f.readAll())
     f.close()
-
-    RDP = services.RDP
-    RDPSides = services.RDPSides
-    RDPNeighbors = services.RDPNeighbors
-    NAT = services.NAT
-    natTable = services.natTable
-    natInsideSides = services.natInsideSides
-    natOutsideSides = services.natOutsideSides
-    denySrc = services.denySrc
-    denyDst = services.denyDst
-    whLst = services.whLst
-    blkLst = services.blkLst
-    denyList = services.denyList
+    if services == "" then
+        RDP = false
+        RDPSides = {}
+        RDPNeighbors = {}
+        NAT = false
+        natTable = {}
+        natInsideSides = {}
+        natOutsideSides = {}
+        denySrc = false
+        denyDst = false
+        whLst = false
+        blkLst = false
+        denyList = {}
+    else
+        RDP = services.RDP
+        RDPSides = services.RDPSides
+        RDPNeighbors = services.RDPNeighbors
+        NAT = services.NAT
+        natTable = services.natTable
+        natInsideSides = services.natInsideSides
+        natOutsideSides = services.natOutsideSides
+        denySrc = services.denySrc
+        denyDst = services.denyDst
+        whLst = services.whLst
+        blkLst = services.blkLst
+        denyList = services.denyList
+    end
 
 end
 loadRouterServices()
