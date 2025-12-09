@@ -366,6 +366,7 @@ local function forwardPacket(packet, incomingSide)
 					table.insert(RDPNeighbors[packet.src].routes,subnet)
 					RDPNeighbors[packet.src].lastSeen = os.clock()
 				end
+                print("Learned routes from"..packet.src)
                 saveRouterServices()
                 saveRoutingTable()
 			end
@@ -640,7 +641,7 @@ local function RDPCLI()
 		elseif cmd=="side" then
 			if arg2 == "enable" then
 				local ok
-				for _,side in pairs(interfaces) do -- Add the interface as a RDP enabled side
+				for side in pairs(interfaces) do -- Add the interface as a RDP enabled side
 					if side == arg1 then
 						table.insert(RDPSides,arg1)
                         ok = true
@@ -650,7 +651,7 @@ local function RDPCLI()
 					end
 				end
 				if not ok then -- If the side isn't an interface then error
-					print("Side not found, try again!")
+					print("Side"..arg1.." not found, try again!")
 				end
 			elseif arg2 == "disable" then
                 local ok
@@ -666,6 +667,8 @@ local function RDPCLI()
                 if not ok then -- If the side isn't a RDP enabled side then error
                     print("Side isn't enabled, try again!")
                 end
+            else
+                print("Please enter a side and either enable or disable")
 			end
 		elseif cmd=="exit" then
             print("Returning to Router mode")
@@ -706,7 +709,7 @@ local function NATCLI()
 					end
 				end
 				local ok
-				for _,side in pairs(interfaces) do -- Add the side to the inside ports group
+				for side in pairs(interfaces) do -- Add the side to the inside ports group
 					if side == arg1 then
 						table.insert(natInsideSides,arg1)
                         print("Added side"..side.." to inside group")
@@ -726,7 +729,7 @@ local function NATCLI()
 					end
 				end
 				local ok
-				for _,side in pairs(interfaces) do -- Add the side to the outside ports group
+				for side in pairs(interfaces) do -- Add the side to the outside ports group
 					if side == arg1 then
 						table.insert(natOutsideSides,arg1)
                         print("Added side"..side.." to outside group")
