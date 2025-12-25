@@ -71,7 +71,7 @@ end
 -- Packet Forwarding 
 local function forwardPacket(side, packet)
     local src = packet.src
-    local dst = packet.dst
+    local dst,port = packet.dst:match("^([^:]+):?(%d*)$")
     
     -- Broadcast handling
     if dst == "0" then
@@ -94,6 +94,9 @@ local function forwardPacket(side, packet)
         if def and def.side and def.channel and interfaces[def.side] then
             interfaces[def.side].transmit(def.channel, PRIVATE_CHANNEL, packet)
             log("Forwarded to default route (" .. def.side .. ") for " .. tostring(dst))
+			if port then
+				print("Ignored attached port number: "..port)
+			end
         else
             log("No valid route, dropping packet.")
         end
@@ -118,7 +121,7 @@ local function sendSwitchHello(side, target_channel, include_routes)
         uid = makeUID(),
         src = tostring(PRIVATE_CHANNEL),
         dst = "0",
-        ttl = 8,
+        ttl = 1,
         payload = payload
     }
     if side and target_channel then
@@ -199,14 +202,13 @@ local function CLI()
         local args = {}
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
-        local arg2 = args[2]
         if cmd == "discover" then
             sendSwitchHello()
         elseif cmd == "show" then
             showRoutingTable()
         elseif cmd == "clear" then
             clearRoutingTable()
-        elseif cmd == "default" and arg2 == "route" and args[3] and args[4] then
+        elseif cmd == "default" and arg[2] == "route" and args[3] and args[4] then
             local side = args[3]
             local channel = tonumber(args[4])
             if side and interfaces[side] then
@@ -229,7 +231,7 @@ end
 -- === Main Loop ===
 local function Listener()
         while true do
-            local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
+            local _, side, _, _, message = os.pullEvent("modem_message")
             if type(message) == "table" then
                 if message.payload.type == "S_H" then
                     handleSwitchHello(side, message)

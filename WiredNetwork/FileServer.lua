@@ -138,7 +138,7 @@ local function sendPacket(dst,payload)
         print("Unknown destination: "..tostring(dst))
         return
     end
-    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=64, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
 end
 

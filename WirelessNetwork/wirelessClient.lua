@@ -158,7 +158,7 @@ local function sendPacket(dst, payload)
         term.setTextColor(colors.white)
         return
     end
-    local packet = { uid = makeUID(), src = myBNP, dst = resolved, ttl = 8, payload = payload }
+    local packet = { uid = makeUID(), src = myBNP, dst = resolved, ttl = 64, payload = payload }
     -- ensure routerChannel is open
     openChannel(routerChannel)
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
@@ -167,7 +167,7 @@ end
 
 local function broadcast(payload)
     if myBNP then
-    	local packet = { uid = makeUID(), src = myBNP or "unknown", dst = "0", ttl = 8, payload = payload }
+    	local packet = { uid = makeUID(), src = myBNP or "unknown", dst = "0", ttl = 64, payload = payload }
     	-- use public broadcast for discovery
     	modem.transmit(1, 1, packet)
     	debugPrint("Broadcasted on public channel 1, payload: "..tostring(payload.type or "<unknown>"))

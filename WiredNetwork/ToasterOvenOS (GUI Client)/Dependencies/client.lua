@@ -48,7 +48,7 @@ modem.open(PRIVATE_CHANNEL)
 
 local BNP_FILE = "Configs/BNP.txt"
 local HOSTS_FILE = "Configs/hosts.txt"
-local SERVER_FILE = "Configs/host_server_ip.txt"
+local SERVER_FILE = "Configs/dns-server-bnp.txt"
 
 local myBNP
 local hosts = {}
@@ -152,20 +152,20 @@ function C.sendPacket(dst, payload)
         term.setTextColor(colors.white)
         return
     end
-    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
+    local packet = { uid=C.makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
     debugPrint("Sent packet to "..dst.." on channel "..routerChannel)
 end
 
 local function broadcast(payload)
-    local packet = { uid=makeUID(), src=myBNP or "unknown", dst="0", ttl=8, payload=payload }
+    local packet = { uid=C.makeUID(), src=myBNP or "unknown", dst="0", ttl=8, payload=payload }
     modem.transmit(1,1,packet)
 end
 
 -- HELLO REPLY
 local function replyHello(requester)
     if not myBNP then return end
-    sendPacket(requester, { type="HELLO_REPLY", private_channel = PRIVATE_CHANNEL })
+    C.sendPacket(requester, { type="HELLO_REPLY", private_channel = PRIVATE_CHANNEL })
     debugPrint("Replied to HELLO_REQUEST from "..requester)
 end
 
@@ -187,7 +187,7 @@ local function switchReply(side,packet)
 	--ALWAYS set router channel to switches private channel for easier network expansion
 	routerChannel = payload.private_channel
     -- Send back to the switch using the port we received from
-    sendPacket(packet.src, response)
+    C.sendPacket(packet.src, response)
     debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with BNP " .. myBNP)
 end
 
@@ -200,7 +200,7 @@ local requestedFile = ""
 
 local function requestFile(dst, filename)
     print("Requesting file '" .. filename .. "' from " .. dst .. " (" .. resolveAddress(dst) ..")")
-    sendPacket(dst, { type="FILE_REQUEST", filename=filename })
+    C.sendPacket(dst, { type="FILE_REQUEST", filename=filename })
 end
 
 function C.sendACK(serverKeyword, password)
@@ -215,7 +215,7 @@ function C.sendACK(serverKeyword, password)
         term.setTextColor(colors.blue)
         print("Establishing Connection to " .. serverKeyword .. " (" .. dst .. ") if no response within max 60 seconds assume no connection, try ping to test connection manually")
         term.setTextColor(colors.white)
-    	sendPacket(dst, { type="ACK_START", password = password })
+    	C.sendPacket(dst, { type="ACK_START", password = password })
 	end
 end
 
@@ -241,13 +241,13 @@ end
 
 local function discoverHostServer()
     debugPrint("[HostSync] Discovering host server...")
-    broadcast({ type="DISCOVER_HOST_SERVER" })
+    broadcast({ type="DISCOVER_DNS_SERVER" })
 end
 
 function C.requestFullHosts()
     if hostServerBNP then
         debugPrint("[HostSync] Requesting full host table from " .. hostServerBNP)
-        sendPacket(hostServerBNP, { type="REQUEST_HOSTS" })
+        C.sendPacket(hostServerBNP, { type="REQUEST_HOSTS" })
     else
         discoverHostServer()
     end
@@ -277,7 +277,7 @@ function C.receiveLoop()
                     receivingFile = true
                     fileBuffer = {}
                     expectedChunks = payload.total or 1
-                    fileNameBeingReceived = payload.filename or ("unknown_"..makeUID())
+                    fileNameBeingReceived = payload.filename or ("unknown_"..C.makeUID())
                     print("Receiving file "..fileNameBeingReceived.." ("..expectedChunks.." chunks)")
                 end
                 fileBuffer[payload.seq] = payload.data
@@ -316,14 +316,14 @@ function C.receiveLoop()
                     term.setTextColor(colors.white)
     			end
             elseif payload.type == "PING" then --Ping handling
-                sendPacket(message.src,{ type="PING_REPLY", message="pong" })
+                C.sendPacket(message.src,{ type="PING_REPLY", message="pong" })
             elseif payload.type == "PING_REPLY" then
                 print("Reply from "..message.src..": "..(payload.message or "pong"))
             elseif payload.type == "UPDATE_HOSTS" then --Updates Host name translations by overriding the current hosts.txt
                 handleUpdateHosts(payload)
             elseif payload.type == "HOSTS_DIFF" then --Updates Host name translations by adding, removing, or editing hosts.txt
                 handleHostsDiff(payload)
-            elseif payload.type == "HOST_SERVER_HERE" then -- Remembers host server BNP
+            elseif payload.type == "DNS_SERVER_HERE" then -- Remembers host server BNP
                 if payload.server_ip then
                     hostServerBNP = payload.server_ip
                     saveServerBNP()
@@ -372,7 +372,7 @@ function C.cliLoop() --Command Line Interface loop
         elseif cmd == "set" and args[2] == "BNP" and args[3] then
             myBNP = args[3]; saveBNP(); print("BNP set to "..myBNP)
         elseif cmd == "ping" and args[2] then
-            sendPacket(args[2], { type="PING" }); print("Ping sent to "..args[2])
+            C.sendPacket(args[2], { type="PING" }); print("Ping sent to "..args[2])
         elseif cmd == "list" and args[2] == "hosts" then
             print("Known hosts:")
             for k,v in pairs(hosts) do

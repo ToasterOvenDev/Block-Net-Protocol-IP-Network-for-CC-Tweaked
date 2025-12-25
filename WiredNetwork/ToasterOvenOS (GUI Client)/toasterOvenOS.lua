@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-global
 -- toasterOvenOS.lua
 
 package.path = package.path .. ";./Dependencies/?.lua"

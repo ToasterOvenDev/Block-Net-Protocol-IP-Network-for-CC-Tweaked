@@ -60,6 +60,8 @@ local BNP_FILE = "BNP.txt" -- the name of the BNP text file for loading/saving
 local myBNP
 local routerChannel = 1
 local SERVERNAME = "placeholder.lua" -- For ensure startup replace 'placeholder' with your server's name
+local serverConfigs = { --[[ Place any server configs you use here | example: ]] username = "User" }
+local configFile = "placeholder.config"
 
 -- ==========================
 -- LOAD OR CREATE BNP
@@ -85,6 +87,25 @@ local function saveBNP()
     f.close()
 end
 
+if not fs.exsits(configFile) then
+	local f = fs.open(configFile,"w")
+	f.write("")
+	f.close()
+else
+	local f = fs.open(configFile,"r")
+	local config = f.readAll()
+	if config == "" then
+		serverConfigs = {
+			--Place any server confgis you use here
+			-- Example
+			username = "User"
+		}
+	else
+		-- Server configs here
+		-- example
+		serverConfigs.username = config.username
+	end
+end
 -- ==========================
 -- PACKET UTILITIES
 -- ==========================
@@ -99,9 +120,15 @@ local function sendPacket(dst,payload)
         print("Set your BNP first with 'set BNP <BNP>' before sending packets.")
         return
     end
-    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=8, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
 end
+
+local function broadcast(payload)
+    local packet = { uid=makeUID(), src=myBNP or "unknown", dst="0", ttl=64, payload=payload }
+    modem.transmit(1,1,packet)
+end
+
 
 -- HELLO_REPLY
 local function replyHello(requester, private_channel)
@@ -210,5 +237,4 @@ end
 
 ensureStartup()
 
-if not fs.exists(FILE_DIR) then fs.makeDir(FILE_DIR) end
 parallel.waitForAny(receiveLoop, cliLoop)

@@ -18,6 +18,7 @@ local DEFAULT_TTL = 8
 local HELLO_INTERVAL = 60
 local NAT_TIMEOUT = 60  -- seconds before NAT entry expires
 local PRIVATE_CHANNEL = os.getComputerID()
+local maxDist = 100
 
 -- INTERFACES (support multiple modems but we expect exactly 1 wireless and 1 wired)
 local sides = {"top","bottom","left","right","front","back"}
@@ -146,7 +147,7 @@ local function handlePacket(packet, incomingSide)
         end
     end
 
-    -- default: if dst is broadcast -> forward to other side(s)
+    -- If dst is broadcast -> forward to other side(s)
     if packet.dst == "0" then
         broadcastExcept(incomingSide, packet)
         return
@@ -205,8 +206,8 @@ end
 -- LISTENER
 local function listener()
     while true do
-        local e, side, ch, reply, msg, dist = os.pullEvent("modem_message")
-        if interfaces[side] and type(msg)=="table" and msg.uid then
+        local _, side, _, _, msg, dist = os.pullEvent("modem_message")
+        if interfaces[side] and type(msg)=="table" and msg.uid and dist<maxDist then
             handlePacket(msg, side)
         end
     end

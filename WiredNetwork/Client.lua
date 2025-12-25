@@ -54,7 +54,7 @@ modem.open(PRIVATE_CHANNEL)
 
 local BNP_FILE = "BNP.txt"
 local HOSTS_FILE = "hosts.txt"
-local SERVER_FILE = "host_server_ip.txt"
+local SERVER_FILE = "dns-server-bnp.txt"
 
 local myBNP
 local hosts = {}
@@ -158,13 +158,13 @@ local function sendPacket(dst, payload)
         term.setTextColor(colors.white)
         return
     end
-    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=64, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
     debugPrint("Sent packet to "..dst.." on channel "..routerChannel)
 end
 
 local function broadcast(payload)
-    local packet = { uid=makeUID(), src=myBNP or "unknown", dst="0", ttl=8, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP or "unknown", dst="0", ttl=64, payload=payload }
     modem.transmit(1,1,packet)
 end
 
@@ -246,8 +246,11 @@ local function handleHostsDiff(payload)
 end
 
 local function discoverHostServer()
+	if not myBNP then
+		return
+	end
     debugPrint("[HostSync] Discovering host server...")
-    broadcast({ type="DISCOVER_HOST_SERVER" })
+    broadcast({ type="DISCOVER_DNS_SERVER" })
 end
 
 local function requestFullHosts()
@@ -329,9 +332,9 @@ local function receiveLoop()
                 handleUpdateHosts(payload)
             elseif payload.type == "HOSTS_DIFF" then --Updates Host name translations by adding, removing, or editing hosts.txt
                 handleHostsDiff(payload)
-            elseif payload.type == "HOST_SERVER_HERE" then -- Remembers host server BNP
-                if payload.server_ip then
-                    hostServerBNP = payload.server_ip
+            elseif payload.type == "DNS_SERVER_HERE" then -- Remembers host server BNP
+                if payload.server_bnp then
+                    hostServerBNP = payload.server_bnp
                     saveServerBNP()
                     debugPrint("[HostSync] Host server discovered at " .. hostServerBNP)
                     requestFullHosts()
