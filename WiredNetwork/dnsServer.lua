@@ -1,6 +1,7 @@
 -- dnsServer.lua Version 2.0 (previously known as hostServer)
 -- Central host registry server that distributes hosts.txt via diff updates
--- Sends full update on boot and diffs every change; periodic broadcast every 10 minutes
+-- Sends full update on boot and diffs every change
+-- Can connect to a 'Master DNS Server' who will contain an entire networks host mappings 
 -- compatible with multi-channel system
 -- compatible with switch 2.0 discovery system
 
@@ -76,9 +77,9 @@ local BROADCAST_INTERVAL = 600 -- 10 minutes in seconds
 local serverBNP
 local routerChannel = 1
 local master = false -- If this DNS server is a Master DNS Server
-local masterStart
+local masterStart = 0
 local hostsMetaData = {}
-local masterDNS = {}
+local masterDNS = { BNP = nil, time = 0 }
 local hosts = {}
 
 -- load or create configuration file
@@ -93,17 +94,19 @@ else
     f.close()
     if configs == "" then
 		serverBNP = nil
-		masterDNS = {}
+		masterDNS = { BNP = nil, time = 0 }
 		master = false
+        masterStart = 0
 	else
-		serverBNP = configs.serverBNP
-		masterDNS = configs.masterDNS or {}
+		serverBNP = configs.serverBNP or nil
+		masterDNS = configs.masterDNS or { BNP = nil, time = 0 }
 		master = configs.master or false
+        masterStart = configs.masterStart or 0
 	end
 end
 
 local function saveConfigs()
-	serverConfigs = { serverBNP = serverBNP, masterDNS = masterDNS, master = master }
+	serverConfigs = { serverBNP = serverBNP, masterDNS = masterDNS, master = master, masterStart = masterStart }
 	local f = fs.open(serverConfFile,"w")
 	f.write(textutils.serialize(serverConfigs))
 	f.close()
@@ -245,25 +248,31 @@ end
 local function handleHostsDiff(packet)
 	local payload = packet.payload
     local diff = payload.diff
-    if not diff then return end
-	if not master or packet.src ~= masterDNS.BNP then return end
+	if not master or packet.src ~= masterDNS.BNP or not diff then return end
+    debugPrint("Diff received attempting to handle")
 
     for _, name in ipairs(diff.removed or {}) do
 		if not master then
 			hosts[name] = nil
 		else
-			if hostsMetaData[name].orginalsrc == packet.src then
-				hosts[name] = nil
-			end
+            debugPrint("Checking removal diff")
+            if hostsMetaData[name] then -- Make sure that the Meta Data exists first
+			    if hostsMetaData[name].orginalsrc == packet.src then
+			    	hosts[name] = nil
+                    debugPrint("Removing "..name)
+			    end
+            end
 		end
 	end
     for name, info in pairs(diff.added or {}) do
 		if not master then
 			hosts[name] = info
 		else
-			if not hosts[name] then
+            debugPrint("Checking addition diff")
+			if not hosts[name] then -- Make sure you don't already have a mapping
 				hosts[name] = info
 				hostsMetaData[name] = { orginalsrc = packet.src, timeArrived = os.epoch() }
+                debugPrint("Added "..name)
 			end
 		end
 	end
@@ -271,16 +280,20 @@ local function handleHostsDiff(packet)
 		if not master then
 			hosts[name] = info
 		else
-			if hostsMetaData[name].orginalsrc == packet.src then
-				hosts[name] = info
-			end
+            debugPrint("Checking update diff")
+            if hostsMetaData[name] then
+			    if hostsMetaData[name].orginalsrc == packet.src then
+				    hosts[name] = info
+                    debugPrint("Updating "..name) -- Perculator :3
+			    end
+            end
 		end
 	end
     saveMaster()
     debugPrint("Master diff applied.")
 end
 
--- PACKET RECEIVE LOOP
+-- PACKET RECEIVE LOOP (Massa) :P
 local function receiveLoop()
 	while true do
 		local _, _, _, _, message = os.pullEvent("modem_message")
@@ -313,29 +326,37 @@ local function receiveLoop()
 					replyHello(message.src)
 				elseif payload.type == "S_H" then --Switch hello packet for switch discovery
 					replySwitch(modemSide, message)
+                elseif payload.type == "PING" then
+                    sendDirect(message.src, { type = "PING_REPLY", message = "DNS Server Here" })
 				elseif payload.type == "MASTER_DNS_REQ" and master then
 					sendDirect(message.src, { type = "MASTER_DNS_MAP", mappings = hosts, time = masterStart })
-					debugPrint("Replied to Master DNS Request")
+					debugPrint("Replied to Child DNS Request")
 				elseif payload.type == "MASTER_DNS_MAP" then
+                    debugPrint("Master Mappings recieved")
 					if not master then
-						if payload.mappings then
-							payload.mappings = hosts
-							saveMaster()
-						end
-						if masterDNS.time < payload.time or not masterDNS.BNP then -- Update your Master DNS if you don't have one or if the new one is older
-							masterDNS = { BNP = message.src, time = payload.time }
+                        debugPrint("Handling as non-master DNS")
+                        debugPrint("masterDNS = "..textutils.serialize(masterDNS))
+                        debugPrint("payload.time = "..tostring(payload.time))
+                        if masterDNS.time < payload.time or not masterDNS.BNP then -- Update your Master DNS if you don't have one or if the new one is older
+                            print("New Master Found, updating host mappings according to new Master")
+                            masterDNS = { BNP = message.src, time = payload.time }
 							saveConfigs()
 						end
-						debugPrint("Got an update from Master DNS")
+                        if payload.mappings and message.src == masterDNS.BNP then
+                            debugPrint("Got an update from Master DNS, applying update to hosts registry")
+                            hosts = payload.mappings
+                            saveMaster()
+                        end
 					else
+                        debugPrint("Handling as master DNS")
 						if payload.time > masterStart then
 							master = false
-							masterStart = nil
+							masterStart = 0
 							masterDNS = { BNP = message.src, time = payload.time }
 							print("No longer Master DNS, an older Master found")
 							saveConfigs()
 						end
-					end
+					end -- Crash when child sends diff update
 				elseif payload.type == "HOSTS_DIFF" or payload.type == "HOST_DIFF_TO_MASTER" or payload.type == "DNS_SVR_DIFF" then
 					if master or message.src == masterDNS.BNP then
 						local oldHosts = {}
@@ -447,7 +468,7 @@ local function cliLoop()
                 masterStart = os.epoch()
             elseif tf == "false" then
                 master = false
-                masterStart = nil
+                masterStart = 0
                 print("Master mode disabled")
             else
                 print("unrecognized, 'true' or 'false'.")
@@ -476,7 +497,7 @@ end
 local function periodicBroadcast()
     while true do
         os.sleep(BROADCAST_INTERVAL)
-        if not masterDNS.BNP or not master then
+        if not masterDNS.BNP and not master then
 			local payload = { type = "MASTER_DNS_REQ" }
 			broadcastAll(payload)
 		end
