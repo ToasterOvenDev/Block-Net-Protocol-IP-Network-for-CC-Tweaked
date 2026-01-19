@@ -52,7 +52,7 @@ local SERVER_FILE = "Configs/dns-server-bnp.txt"
 
 local myBNP
 local hosts = {}
-local hostServerBNP = "201.200.10.1"
+local hostServerBNP
 
 -- BNP MANAGEMENT
 
@@ -348,6 +348,7 @@ local function printCommands() -- prints commands with different colors
         "list hosts",
         "sync hosts",
         "BNP",
+		"clear or clr",
         "exit",
         "debugmode <true|false>"
     }
@@ -363,16 +364,17 @@ function C.cliLoop() --Command Line Interface loop
     printCommands()
     while true do
         io.write("> ")
-        local line = io.read()
+        local line = io.read():lower()
         if not line then break end
         local args = {}
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
         if cmd == "exit" then return
-        elseif cmd == "set" and args[2] == "BNP" and args[3] then
+        elseif cmd == "set" and args[2] == "bnp" and args[3] then
             myBNP = args[3]; saveBNP(); print("BNP set to "..myBNP)
         elseif cmd == "ping" and args[2] then
             C.sendPacket(args[2], { type="PING" }); print("Ping sent to "..args[2])
+		elseif cmd == "help" then printCommands()
         elseif cmd == "list" and args[2] == "hosts" then
             print("Known hosts:")
             for k,v in pairs(hosts) do
@@ -383,7 +385,7 @@ function C.cliLoop() --Command Line Interface loop
         elseif cmd == "getfile" and args[2] and args[3] then
             C.sendACK(args[2], args[4] or "")
             requestedFile = args[3]
-        elseif cmd == "BNP" then
+        elseif cmd == "bnp" then
             print("Current BNP: "..tostring(myBNP))
         elseif cmd == "debugmode" and args[2] then
     		if args[2] == "false" then

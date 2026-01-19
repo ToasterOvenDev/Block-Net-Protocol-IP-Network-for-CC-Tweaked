@@ -42,7 +42,7 @@ local function debugPrint(msg,fileOnly)
         print("[DEBUG] " .. msg)
     end
 end
-debugPrint("[BOOT] Debugging started",true)
+debugPrint("[BOOT] Started logging",true)
 -- CONFIG
 
 local modem, modemSide
@@ -144,15 +144,21 @@ end
 
 -- create diff between oldHosts and newHosts
 local function makeDiff(oldHosts, newHosts)
+	debugPrint("[DIFF] Making a Diff", true)
+	debugPrint("[DIFF] Old Hosts: "..textutils.serialize(oldHosts),true)
+	debugPrint("[DIFF] New Hosts: "..textutils.serialize(newHosts),true)
     local diff = { added = {}, removed = {}, updated = {} }
     -- removed
+	debugPrint("[DIFF] Removed diff being made", true)
     for k in pairs(oldHosts) do
-        if not newHosts[k] then table.insert(diff.removed, k) end
+        if not newHosts[k] then table.insert(diff.removed, k) debugPrint("[DIFF] "..k.." was removed",true) end
     end
     -- added/updated
+	debugPrint("[DIFF] Added and Updated diff being made", true)
     for k, v in pairs(newHosts) do
         if not oldHosts[k] then
             diff.added[k] = v
+			debugPrint("[DIFF] "..k.." was added",true)
         else
             -- compare BNP and flags
             local old = oldHosts[k]
@@ -165,7 +171,7 @@ local function makeDiff(oldHosts, newHosts)
             else
                 for i=1,#of do if of[i] ~= nf[i] then changed = true; break end end
             end
-            if changed then diff.updated[k] = v end
+            if changed then diff.updated[k] = v debugPrint("[DIFF] "..k.." was updated",true) end
         end
     end
     return diff
@@ -194,7 +200,7 @@ end
 local function replyHello(requester)
     if not serverBNP then return end
     sendDirect(requester, { type="HELLO_REPLY", private_channel = PRIVATE_CHANNEL })
-    debugPrint("Replied to HELLO_REQUEST from "..requester)
+    debugPrint("[HELLO] Replied to HELLO_REQUEST from "..requester)
 end
 
 local function replySwitch(side, packet)
@@ -203,7 +209,7 @@ local function replySwitch(side, packet)
     if not payload.switch then return end
     -- Make sure the client has an BNP
     if not serverBNP then
-        debugPrint("Received S_H from switch but server BNP is not set, ignoring.")
+        debugPrint("[SWITCH] Received S_H from switch but server BNP is not set, ignoring.")
         return
     end
     -- Respond to switch with our BNP and private channel
@@ -216,12 +222,18 @@ local function replySwitch(side, packet)
 	routerChannel = payload.private_channel --Will ALWAYS override the router channel to account for network expansion
     -- Send back to the switch using the port we received from
     sendDirect(packet.src, response)
-    debugPrint("Responded to S_H from switch " .. tostring(packet.src) .. " with BNP " .. serverBNP)
+    debugPrint("[SWITCH] Responded to S_H from switch " .. tostring(packet.src) .. " with BNP " .. serverBNP)
 end
--- On boot broadcast full hosts
-local function broadcastFullHosts()
-    -- send full table in UPDATE_HOSTS
-    local payload = { type = "UPDATE_HOSTS", hosts = hosts }
+-- Function to broadcast to children to replace their current hosts list
+local function broadcastFullHosts(masterMap)
+	masterMap = masterMap or false
+    local payload
+	-- send full table in UPDATE_HOSTS
+	if masterMap and master then -- For the use case that a Master DNS has to send a non-requested DNS Map
+		payload = { type = "DNS_MAP", mapping = hosts }
+	else
+		payload = { type = "UPDATE_HOSTS", hosts = hosts }
+	end
     broadcastAll(payload)
     print("Broadcasted full hosts to network.")
 end
@@ -247,19 +259,23 @@ end
 
 local function handleHostsDiff(packet)
 	local payload = packet.payload
-    local diff = payload.diff
-	if not master or packet.src ~= masterDNS.BNP or not diff then return end
-    debugPrint("Diff received attempting to handle")
+	local diff = payload.diff
+	if not diff then debugPrint("[DIFF] Diff packet malformed dropping",true) return end -- drop the packet if diff is nil
+	if not master then
+		debugPrint("[DIFF] I am not a master checking if it comes from my master", true)
+		if packet.src ~= masterDNS.BNP then debugPrint("[DIFF] Diff not from Master dropping",true) return end --Drop the packet if you are not the master or if it doesn't come from your master DNS
+	end
+    debugPrint("[DIFF] Diff received attempting to handle")
 
     for _, name in ipairs(diff.removed or {}) do
 		if not master then
 			hosts[name] = nil
 		else
-            debugPrint("Checking removal diff")
+            debugPrint("[DIFF] Checking removal diff")
             if hostsMetaData[name] then -- Make sure that the Meta Data exists first
 			    if hostsMetaData[name].orginalsrc == packet.src then
 			    	hosts[name] = nil
-                    debugPrint("Removing "..name)
+                    debugPrint("[DIFF] Removing "..name)
 			    end
             end
 		end
@@ -268,11 +284,11 @@ local function handleHostsDiff(packet)
 		if not master then
 			hosts[name] = info
 		else
-            debugPrint("Checking addition diff")
+            debugPrint("[DIFF] Checking addition diff")
 			if not hosts[name] then -- Make sure you don't already have a mapping
 				hosts[name] = info
 				hostsMetaData[name] = { orginalsrc = packet.src, timeArrived = os.epoch() }
-                debugPrint("Added "..name)
+                debugPrint("[DIFF] Added "..name)
 			end
 		end
 	end
@@ -280,25 +296,26 @@ local function handleHostsDiff(packet)
 		if not master then
 			hosts[name] = info
 		else
-            debugPrint("Checking update diff")
+            debugPrint("[DIFF] Checking update diff")
             if hostsMetaData[name] then
 			    if hostsMetaData[name].orginalsrc == packet.src then
 				    hosts[name] = info
-                    debugPrint("Updating "..name) -- Perculator :3
+                    debugPrint("[DIFF] Updating "..name)
 			    end
             end
 		end
 	end
     saveMaster()
-    debugPrint("Master diff applied.")
+    debugPrint("[DIFF] Master diff applied.")
 end
 
--- PACKET RECEIVE LOOP (Massa) :P
+local hellos = 0 -- This is so master DNS servers can update child DNS every 5 hello packets received to avoid making a dedicated parrallel loop
+-- PACKET RECEIVE LOOP
 local function receiveLoop()
 	while true do
 		local _, _, _, _, message = os.pullEvent("modem_message")
 		if type(message) == "table" then
-			debugPrint(textutils.serialize(message), true)
+			debugPrint("[PACKET] "..textutils.serialize(message), true)
 			local payload = message.payload
 			if type(payload) ~= "table" and serverBNP then
 				print("Invalid payload from " .. message.src)
@@ -307,8 +324,7 @@ local function receiveLoop()
 					-- reply to discovery: DNS_SERVER_HERE
 					local server_bnp = serverBNP
 					if server_bnp then
-						sendDirect(message.src,
-							{ type = "DNS_SERVER_HERE", server_bnp = server_bnp, private_channel = PRIVATE_CHANNEL })
+						sendDirect(message.src, { type = "DNS_SERVER_HERE", server_bnp = server_bnp, private_channel = PRIVATE_CHANNEL })
 						print("Replied DNS_SERVER_HERE to " .. message.src)
 					end
 				elseif payload.type == "REQUEST_HOSTS" then
@@ -320,35 +336,41 @@ local function receiveLoop()
 					if routerChannel == 1 or routerChannel == nil then --Makes sure that a switch isn't in between router and device
 						if payload.private_channel and type(payload.private_channel) == "number" then
 							routerChannel = payload.private_channel
-							debugPrint("Learned router channel: " .. routerChannel)
+							debugPrint("[HELLO] Learned router channel: " .. routerChannel)
 						end
 					end
 					replyHello(message.src)
+					if master then -- We want to make sure that all DNS servers have the same mapping as the Master so were gonna update child DNS every so often
+						if hellos == 5 then
+							hellos = 0
+							broadcastFullHosts(true)
+						end
+					end
 				elseif payload.type == "S_H" then --Switch hello packet for switch discovery
 					replySwitch(modemSide, message)
                 elseif payload.type == "PING" then
                     sendDirect(message.src, { type = "PING_REPLY", message = "DNS Server Here" })
 				elseif payload.type == "MASTER_DNS_REQ" and master then
 					sendDirect(message.src, { type = "MASTER_DNS_MAP", mappings = hosts, time = masterStart })
-					debugPrint("Replied to Child DNS Request")
+					debugPrint("[MASTER_REQ] Replied to Child DNS Request")
 				elseif payload.type == "MASTER_DNS_MAP" then
-                    debugPrint("Master Mappings recieved")
+                    debugPrint("[MASTER_MAP] Master Mappings recieved")
 					if not master then
-                        debugPrint("Handling as non-master DNS")
-                        debugPrint("masterDNS = "..textutils.serialize(masterDNS))
-                        debugPrint("payload.time = "..tostring(payload.time))
+                        debugPrint("[MASTER_MAP] Handling as non-master DNS")
+                        debugPrint("[MASTER_MAP] masterDNS = "..textutils.serialize(masterDNS),true)
+                        debugPrint("[MASTER_MAP] payload.time = "..tostring(payload.time),true)
                         if masterDNS.time < payload.time or not masterDNS.BNP then -- Update your Master DNS if you don't have one or if the new one is older
                             print("New Master Found, updating host mappings according to new Master")
                             masterDNS = { BNP = message.src, time = payload.time }
 							saveConfigs()
 						end
                         if payload.mappings and message.src == masterDNS.BNP then
-                            debugPrint("Got an update from Master DNS, applying update to hosts registry")
+                            debugPrint("[MASTER_MAP] Got an update from Master DNS, applying update to hosts registry")
                             hosts = payload.mappings
                             saveMaster()
                         end
 					else
-                        debugPrint("Handling as master DNS")
+                        debugPrint("[MASTER_MAP] Handling as master DNS")
 						if payload.time > masterStart then
 							master = false
 							masterStart = 0
@@ -356,20 +378,53 @@ local function receiveLoop()
 							print("No longer Master DNS, an older Master found")
 							saveConfigs()
 						end
-					end -- Crash when child sends diff update
+					end
 				elseif payload.type == "HOSTS_DIFF" or payload.type == "HOST_DIFF_TO_MASTER" or payload.type == "DNS_SVR_DIFF" then
 					if master or message.src == masterDNS.BNP then
 						local oldHosts = {}
 						if master then
-							oldHosts = hosts
+							for k,v in pairs(hosts) do oldHosts[k] = { BNP = v.BNP, flags = { table.unpack(v.flags or {}) } } end
 						end
-						handleHostsDiff(payload)
+						handleHostsDiff(message)
 						if master then
 							local diff = makeDiff(oldHosts, hosts)
 							local relay = { type = "DNS_SVR_DIFF", diff = diff } -- Another different type name to get around traffic routing
 							broadcastAll(relay)
-							debugPrint("Relayed diff from a child DNS")
+							debugPrint("[DIFF] Relayed diff from a child DNS")
+						else
+							debugPrint("[DOMAIN-REGISTER] Processed Diff from Master, relaying diff to children")
+							broadcastDiff(payload.diff)
 						end
+					end
+				elseif payload.type == "DNS_MAP" then
+					if message.src == masterDNS.BNP then
+						hosts = {}
+						for k,v in pairs(payload.mapping) do hosts[k] = v end
+						print("Replaced local Mapping with Master Mappings, relaying update to children")
+						debugPrint("Replaced local Mapping with Master Mappings, relaying update to children",true)
+						broadcastFullHosts()
+					end
+				elseif payload.type == "DOMAIN_REGISTER_REQ" then
+					--Check if you have a master and forward the packet to them otherwise process it here, or if you are the master process it here
+					if masterDNS.BNP then
+						sendDirect(masterDNS.BNP, payload)
+						debugPrint("[DOMAIN-REGISTER] Sending to Master to properly process registry request",true)
+					else
+						debugPrint("[DOMAIN_REGISTER] Processing Domain Registry Request",true)
+						local oldHosts = {}
+						for k,v in pairs(hosts) do oldHosts[k] = { BNP = v.BNP, flags = { table.unpack(v.flags or {}) } } end
+						if not hosts[payload.domainName] then
+							debugPrint("[DOMAIN-REGISTER] No domain registered under "..payload.domainName.." allowing domain registry")
+							hosts[payload.domainName] = { BNP = payload.BNP, flags = payload.flags }
+							sendDirect(payload.BNP, { type = "PING_REPLY", message = "Domain Succuessfuly registered as "..payload.domainName })
+							debugPrint("[DOMAIN-REGISTER] Domain Succuessfuly registered")
+						else
+							debugPrint("[DOMAIN-REGISTER] Domain name "..payload.domainName.." might be taken or another issue has occurred expect another request or contact from "..payload.BNP)
+							sendDirect(payload.BNP, { type = "ERROR", message = "Domain cannot be registered, try another domain name or contact DNS server owner" })
+						end
+						debugPrint("[DOMAIN-REGISTER] Updating children with domain information in a diff packet")
+						local diff = makeDiff(oldHosts,hosts)
+						broadcastDiff(diff)
 					end
 				end
 			end
@@ -382,17 +437,17 @@ end
 -- ==========================
 local function printHelp()
     print([[HostServer Commands:
-  addhost <name> <BNP> [flags...]
-  delhost <name>
+  addhost [name] [BNP] [flags...]
+  delhost [name]
   listhosts
-  broadcast
+  'broadcast' or 'broadcast m'
   BNP
-  setbnp <BNP>
-  master <true,false>
+  setbnp [BNP]
+  master [true,false]
   findMaster
   exit
   help
-  debugmode
+  debugmode [true,false]
 ]])
 end
 
@@ -404,7 +459,7 @@ local function cliLoop()
         if not line then break end
         local args = {}
         for word in line:gmatch("%S+") do table.insert(args, word) end
-        local cmd = args[1]
+        local cmd = args[1]:lower()
         if cmd == "help" then printHelp()
         elseif cmd == "exit" then return
         elseif cmd == "listhosts" then
@@ -443,8 +498,16 @@ local function cliLoop()
                 else print("No such host: "..name) end
             end
         elseif cmd == "broadcast" then
-            broadcastFullHosts()
-		elseif cmd == "findMaster" then
+			local mast = args[2]
+			if mast == "m"  and master then
+				print("Broadcasting as a Master")
+				broadcastFullHosts(true)
+			elseif not master and mast == "m" then
+				print("Can't send to children DNS, I'm not a Master DNS")
+			else
+				broadcastFullHosts()
+			end
+		elseif cmd == "findmaster" then
 			local payload = { type = "MASTER_DNS_REQ" }
 			broadcastAll(payload)
         elseif cmd == "setbnp" then
@@ -456,7 +519,7 @@ local function cliLoop()
             else
 				print("Usage: setbnp <BNP>")
 			end
-        elseif cmd == "BNP" then
+        elseif cmd == "bnp" then
             print("Server BNP: "..tostring(serverBNP))
         elseif cmd == "master" then
             local tf = args[2]

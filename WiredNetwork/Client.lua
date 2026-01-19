@@ -347,18 +347,65 @@ local function receiveLoop()
 end
 
 -- CLI LOOP
+
+local function domainRegister()
+	print("Type 'register' to start registering a domain, type 'return' to return to CLI")
+	local domainName
+	local flags = {}
+	while true do
+		io.write("[REGISTER]>")
+		local line = io.read()
+		if not line then break end
+		local args = {}
+		for word in line:gmatch("%S+") do table.insert(args,word) end
+		local cmd = args[1]
+		if cmd == "return" then return
+		elseif cmd == "register" then
+			local registering = true
+			while registering do
+				write("Enter a Domain Name: ")
+				local userin = read()
+				if hosts[userin] then
+					print("Domain is a known host, try a different name")
+				else
+					domainName = userin
+					registering = false
+				end
+				print("Enter any Flags")
+				print("Flags example: FLAG1 FLAG2 FLAG3")
+				write("Flags: ")
+				flags = {}
+				local flagsline = read()
+				for flag in flagsline:gmatch("%S+") do table.insert(flags,flag) end
+				write("Domain Name: "..domainName.."\nFlags: ")
+				for _,flag in ipairs(flags) do print(flag) end
+				print("Send? (y/n)")
+				userin = read()
+				if userin == "y" then
+					sendPacket(hostServerBNP,{ type = "DOMAIN_REGISTER_REQ", BNP = myBNP, domainName = domainName, flags = flags }) --Has to send BNP so if hostServerBNP is not the network Master DNS it can register properly
+				else
+					print("Restarting register process")
+				end
+			end
+		end
+	end
+end
+
 local colorsList = { colors.cyan, colors.yellow, colors.green, colors.magenta }
 
 local function printCommands() -- prints commands with different colors
     local cmds = {
-        "set BNP <BNP>",
-        "ping <host>",
-        "getfile <server> <filename> <password>",
+        "set BNP [BNP]",
+        "ping [host]",
+        "getfile [server] [filename] [password]",
         "list hosts",
         "sync hosts",
         "BNP",
         "exit",
-        "debugmode <true|false>"
+		"clear or clr",
+		"help",
+		"domain",
+        "debugmode [true|false]"
     }
     print("Client ready. Commands:")
     for i, cmd in ipairs(cmds) do
@@ -378,10 +425,11 @@ local function cliLoop() --Command Line Interface loop
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
         if cmd == "exit" then return
-        elseif cmd == "set" and args[2] == "BNP" and args[3] then
+        elseif cmd == "set" and args[2] == "bnp" and args[3] then
             myBNP = args[3]; saveBNP(); print("BNP set to "..myBNP)
         elseif cmd == "ping" and args[2] then
             sendPacket(args[2], { type="PING" }); print("Ping sent to "..args[2])
+		elseif cmd == "help" then printCommands()
         elseif cmd == "list" and args[2] == "hosts" then
             print("Known hosts:")
             for k,v in pairs(hosts) do
@@ -392,8 +440,10 @@ local function cliLoop() --Command Line Interface loop
         elseif cmd == "getfile" and args[2] and args[3] and args[4] then
             sendACK(args[2], args[4] or "")
             requestedFile = args[3]
-        elseif cmd == "BNP" then
+        elseif cmd == "bnp" then
             print("Current BNP: "..tostring(myBNP))
+		elseif cmd == "dnsbnp" then
+			print("DNS Server: "..hostServerBNP)
         elseif cmd == "debugmode" and args[2] then
     		if args[2] == "false" then
         		DEBUG = false; print("Debug mode OFF")
@@ -407,6 +457,8 @@ local function cliLoop() --Command Line Interface loop
             end
 		elseif cmd == "clear" or cmd == "clr" then
 			term.clear()
+		elseif cmd == "domain" then
+			domainRegister()
         else
             term.setTextColor(colors.red)
             print("Error: Unrecognized command")
