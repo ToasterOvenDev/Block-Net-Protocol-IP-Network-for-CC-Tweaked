@@ -58,7 +58,7 @@ local SERVER_FILE = "dns-server-bnp.txt"
 
 local myBNP
 local hosts = {}
-local hostServerBNP
+local DNSServerBNP
 
 -- BNP MANAGEMENT
 
@@ -119,14 +119,14 @@ loadHosts()
 -- HOST SERVER DISCOVERY
 local function saveServerBNP()
     local f = fs.open(SERVER_FILE, "w")
-    f.writeLine(hostServerBNP or "")
+    f.writeLine(DNSServerBNP or "")
     f.close()
 end
 
 local function loadServerBNP()
     if fs.exists(SERVER_FILE) then
         local f = fs.open(SERVER_FILE, "r")
-        hostServerBNP = f.readLine()
+        DNSServerBNP = f.readLine()
         f.close()
     end
 end
@@ -254,9 +254,9 @@ local function discoverHostServer()
 end
 
 local function requestFullHosts()
-    if hostServerBNP then
-        debugPrint("[HostSync] Requesting full host table from " .. hostServerBNP)
-        sendPacket(hostServerBNP, { type="REQUEST_HOSTS" })
+    if DNSServerBNP then
+        debugPrint("[HostSync] Requesting full host table from " .. DNSServerBNP)
+        sendPacket(DNSServerBNP, { type="REQUEST_HOSTS" })
     else
         discoverHostServer()
     end
@@ -328,15 +328,15 @@ local function receiveLoop()
                 sendPacket(message.src,{ type="PING_REPLY", message="pong" })
             elseif payload.type == "PING_REPLY" then
                 print("Reply from "..message.src..": "..(payload.message or "pong"))
-            elseif payload.type == "UPDATE_HOSTS" then --Updates Host name translations by overriding the current hosts.txt
+            elseif payload.type == "UPDATE_HOSTS" and message.src == DNSServerBNP then --Updates Host name translations by overriding the current hosts.txt
                 handleUpdateHosts(payload)
-            elseif payload.type == "HOSTS_DIFF" then --Updates Host name translations by adding, removing, or editing hosts.txt
+            elseif payload.type == "HOSTS_DIFF" and message.src == DNSServerBNP then --Updates Host name translations by adding, removing, or editing hosts.txt
                 handleHostsDiff(payload)
             elseif payload.type == "DNS_SERVER_HERE" then -- Remembers host server BNP
                 if payload.server_bnp then
-                    hostServerBNP = payload.server_bnp
+                    DNSServerBNP = payload.server_bnp
                     saveServerBNP()
-                    debugPrint("[HostSync] Host server discovered at " .. hostServerBNP)
+                    debugPrint("[HostSync] Host server discovered at " .. DNSServerBNP)
                     requestFullHosts()
                 end
             else --Packet isn't handled by client.lua (other files could handle the packet though)
@@ -382,7 +382,7 @@ local function domainRegister()
 				print("Send? (y/n)")
 				userin = read()
 				if userin == "y" then
-					sendPacket(hostServerBNP,{ type = "DOMAIN_REGISTER_REQ", BNP = myBNP, domainName = domainName, flags = flags }) --Has to send BNP so if hostServerBNP is not the network Master DNS it can register properly
+					sendPacket(DNSServerBNP,{ type = "DOMAIN_REGISTER_REQ", BNP = myBNP, domainName = domainName, flags = flags }) --Has to send BNP so if DNSServerBNP is not the network Master DNS it can register properly
 				else
 					print("Restarting register process")
 				end
@@ -395,12 +395,13 @@ local colorsList = { colors.cyan, colors.yellow, colors.green, colors.magenta }
 
 local function printCommands() -- prints commands with different colors
     local cmds = {
-        "set BNP [BNP]",
+        "set bnp [BNP]",
         "ping [host]",
         "getfile [server] [filename] [password]",
         "list hosts",
         "sync hosts",
-        "BNP",
+        "bnp",
+		"dnsbnp",
         "exit",
 		"clear or clr",
 		"help",
@@ -443,7 +444,7 @@ local function cliLoop() --Command Line Interface loop
         elseif cmd == "bnp" then
             print("Current BNP: "..tostring(myBNP))
 		elseif cmd == "dnsbnp" then
-			print("DNS Server: "..hostServerBNP)
+			print("DNS Server: "..DNSServerBNP)
         elseif cmd == "debugmode" and args[2] then
     		if args[2] == "false" then
         		DEBUG = false; print("Debug mode OFF")
@@ -457,6 +458,7 @@ local function cliLoop() --Command Line Interface loop
             end
 		elseif cmd == "clear" or cmd == "clr" then
 			term.clear()
+			term.setCursorPos(1,1)
 		elseif cmd == "domain" then
 			domainRegister()
         else
@@ -487,5 +489,5 @@ end
 
 ensureStartup()
 
-if not hostServerBNP then discoverHostServer() else requestFullHosts() end -- Makes sure that it's hosts.txt is updated fully on boot
+if not DNSServerBNP then discoverHostServer() else requestFullHosts() end -- Makes sure that it's hosts.txt is updated fully on boot
 parallel.waitForAny(receiveLoop, cliLoop) --runs CLI and the listener for packets at once

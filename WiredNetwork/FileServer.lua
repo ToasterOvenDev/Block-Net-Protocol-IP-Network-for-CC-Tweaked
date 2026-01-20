@@ -36,7 +36,7 @@ for _, side in ipairs({"left", "right", "top", "bottom", "front", "back"}) do
         break
     end
 end
- 
+
 if not modem then
     term.setTextColor(colors.red)
     print("No modem detected on any side. Please attach a modem and restart.")
@@ -59,9 +59,8 @@ local PASSWORD_FILE = "server_password.txt"
 local FILE_DIR = "/files/"
 
 -- STATE
-local hosts = {}
 local myBNP
-local SERVER_PASSWORD 
+local SERVER_PASSWORD
 local routerChannel = 1
 
 -- LOAD OR CREATE BNP
@@ -109,18 +108,6 @@ local function savePassword()
     f.close()
 end
 
--- LOAD HOSTS KEYWORDS
-if fs.exists("hosts.txt") then
-    local file = fs.open("hosts.txt","r")
-    while true do
-        local line = file.readLine()
-        if not line then break end
-        local key, BNP = line:match("^(%S+)%s+(%S+)$")
-        if key and BNP then hosts[key]=BNP end
-    end
-    file.close()
-end
-
 -- PACKET UTILITIES
 local seq = 0
 local function makeUID()
@@ -133,12 +120,7 @@ local function sendPacket(dst,payload)
         print("Set your BNP first with 'set BNP <BNP>' before sending packets.")
         return
     end
-    local resolved = hosts[dst] or dst
-    if not resolved then
-        print("Unknown destination: "..tostring(dst))
-        return
-    end
-    local packet = { uid=makeUID(), src=myBNP, dst=resolved, ttl=64, payload=payload }
+    local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=64, payload=payload }
     modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
 end
 
@@ -182,6 +164,7 @@ local function sendFile(dst, filename)
     local fullPath = FILE_DIR..filename
     if not fs.exists(fullPath) then
         debugPrint("File does not exist in "..FILE_DIR..": "..filename)
+		sendPacket(dst, { type="ERROR",message="File does not exist on server!" })
         return
     end
 
@@ -206,7 +189,7 @@ end
 -- RECEIVE LOOP
 local function receiveLoop()
     while true do
-        local e, side, ch, reply, message, dist = os.pullEvent("modem_message")
+        local _, side, _, _, message, _ = os.pullEvent("modem_message")
         if type(message)=="table" and myBNP and (message.dst==myBNP or message.dst=="0") then
             local payload = message.payload
             if type(payload)~="table" then
@@ -235,7 +218,7 @@ local function receiveLoop()
                     sendFile(message.src,payload.filename)
                 elseif payload.type == "PING" then
                     debugPrint("Received PING from "..message.src)
-                    sendPacket(message.src,{ type="PING_REPLY", message="pong" })
+                    sendPacket(message.src,{ type="PING_REPLY", message="File Server Connection" })
                 else
                     debugPrint(("Message from %s: %s"):format(message.src, textutils.serialize(payload)))
                 end

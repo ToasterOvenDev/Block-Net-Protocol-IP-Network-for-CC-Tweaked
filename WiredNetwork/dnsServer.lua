@@ -200,7 +200,7 @@ end
 local function replyHello(requester)
     if not serverBNP then return end
     sendDirect(requester, { type="HELLO_REPLY", private_channel = PRIVATE_CHANNEL })
-    debugPrint("[HELLO] Replied to HELLO_REQUEST from "..requester)
+    debugPrint("[HELLO] Replied to HELLO_REQUEST from "..requester,true)
 end
 
 local function replySwitch(side, packet)
@@ -217,7 +217,7 @@ local function replySwitch(side, packet)
         type = "S_H",
         switch = false,          -- server, not a switch
         src_ip = serverBNP,
-        private_channel = PRIVATE_CHANNEL -- or whatever channel we learned from HELLO
+        private_channel = PRIVATE_CHANNEL
     }
 	routerChannel = payload.private_channel --Will ALWAYS override the router channel to account for network expansion
     -- Send back to the switch using the port we received from
@@ -341,6 +341,8 @@ local function receiveLoop()
 					end
 					replyHello(message.src)
 					if master then -- We want to make sure that all DNS servers have the same mapping as the Master so were gonna update child DNS every so often
+						hellos = hellos + 1
+						debugPrint("[MASTER_MAP] On Hello #"..tostring(hellos),true)
 						if hellos == 5 then
 							hellos = 0
 							broadcastFullHosts(true)
