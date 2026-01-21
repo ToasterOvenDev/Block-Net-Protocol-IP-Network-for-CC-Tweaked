@@ -52,38 +52,48 @@ debugPrint("[BOOT] Started logging",true)
 -- ==========================
 -- FINDS MODEMS (can also find other peripherals, just add a new var and a new if for p's type)
 -- ==========================
-local modem, modemSide
-for _, side in ipairs({"left", "right", "top", "bottom", "front", "back"}) do
-    local p = peripheral.wrap(side)
-    if p and peripheral.getType(side) == "modem" then
-        modem = p
-        modemSide = side
-        break
+local PRIVATE_CHANNEL = os.getComputerID()
+local modems
+local interfaces
+local function findModems()
+    for _, side in ipairs(peripheral.getNames()) do
+        if peripheral.hasType(side, "modem") then
+            table.insert(modems, side)
+        end
     end
 end
- 
-if not modem then
-    term.setTextColor(colors.red)
-    print("No modem detected on any side. Please attach a modem and restart.")
-    term.setTextColor(colors.white)
-    return
-else
-    term.setTextColor(colors.green)
-    print("Modem found on side: "..modemSide)
-    term.setTextColor(colors.white)
+
+findModems()
+
+local publicInterface = modems[1]
+local bankInterface = modems[2]
+
+local function setUpInterfaces()
+    findModems()
+    local pi = peripheral.wrap(publicInterface)
+    local bi = peripheral.wrap(bankInterface)
+    interfaces[publicInterface] = pi
+    interfaces[bankInterface] = bi
+    pcall(function()
+        pi.open(1)                -- broadcast/discovery
+        pi.open(PRIVATE_CHANNEL)  -- unicast
+        bi.open(1200)			  -- Banking Channel
+    end)
+    print("Opened public modem on side "..publicInterface.." (channels 1 + "..PRIVATE_CHANNEL..")")
+    print("Opened bank modem on side "..bankInterface.." (channels 1 + "..PRIVATE_CHANNEL..")")
+
+    if next(interfaces) == nil then error("No modems found!") end
 end
- 
-local PRIVATE_CHANNEL = os.getComputerID()
-modem.open(1)
-modem.open(PRIVATE_CHANNEL)
+setUpInterfaces()
 
 -- CONFIGURATION VARIABLES
-local BNP_FILE = "BNP.txt" -- the name of the BNP text file for loading/saving
+local accntFee = -50 -- A negitive number that represents the cost of creating an account
+local BNP_FILE = "BNP.txt"
 local myBNP
 local routerChannel = 1
-local SERVERNAME = "placeholder.lua" -- For ensure startup replace 'placeholder' with your server's name
-local serverConfigs = { --[[ Place any server configs you use here | example: ]] username = "User" }
-local configFile = "placeholder.config"
+local SERVERNAME = "bankServer.lua"
+local serverConfigs = { usernames = {} }
+local configFile = "bankServer.config"
 
 -- ==========================
 -- LOAD OR CREATE BNP
@@ -118,19 +128,27 @@ else
 	local config = f.readAll()
 	if config == "" then
 		serverConfigs = {
-			--Place any server confgis you use here
-			-- Example
-			username = "User"
+			usernames = {}
 		}
 	else
-		-- Server configs here
-		-- example
-		serverConfigs.username = config.username
+		
+		serverConfigs.usernames = config.usernames
 	end
 end
 -- ==========================
 -- PACKET UTILITIES
 -- ==========================
+
+local function xor(data, key) --Simple Encription/Decryption
+    local out = {}
+    for i = 1, #data do
+        local db = string.byte(data, i)
+        local kb = string.byte(key, (i - 1) % #key + 1)
+        out[i] = string.char(bit32.bxor(db, kb))
+    end
+    return table.concat(out)
+end
+
 local seq = 0
 local function makeUID()
     seq = seq + 1
@@ -143,12 +161,21 @@ local function sendPacket(dst,payload)
         return
     end
     local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=64, payload=payload }
-    modem.transmit(routerChannel, PRIVATE_CHANNEL, packet)
+    publicInterface.transmit(routerChannel, PRIVATE_CHANNEL, packet)
+end
+
+local function sendBankNetwork(dst,payload)
+	if not myBNP then
+        print("Set your BNP first with 'set BNP <BNP>' before sending packets.")
+        return
+    end
+    local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=64, payload=payload }
+    bankInterface.transmit(1200, 1200, packet)
 end
 
 local function broadcast(payload)
     local packet = { uid=makeUID(), src=myBNP or "unknown", dst="0", ttl=64, payload=payload }
-    modem.transmit(1,1,packet)
+    publicInterface.transmit(1,1,packet)
 end
 
 
@@ -194,6 +221,7 @@ end
 local function receiveLoop(packet,side)
     if type(packet)=="table" and myBNP and (packet.dst==myBNP or packet.dst=="0") then
         local payload = packet.payload
+		local usernames = serverConfigs.usernames
         if type(payload)~="table" then
             debugPrint("Invalid payload from "..tostring(packet.src))
 			return
@@ -209,6 +237,43 @@ local function receiveLoop(packet,side)
                 debugPrint("Received PING from "..packet.src)
                 sendPacket(packet.src,{ type="PING_REPLY", message="pong" })
 				return
+			elseif payload.type == "LOGIN_ATTEMPT" then
+				debugPrint("Login attempt with username: "..payload.user.." and password: "..payload.pass)
+				local response
+				for user,info in pairs(usernames) do
+					if payload.user == user and payload.pass == info.pass then
+						response = { type = "LOGIN_RESP", confrim = "Allow", balance = info.bal }
+						sendBankNetwork(packet.src,response) --Say login succeeds
+						return
+					elseif payload.user == user then
+						response = { type = "LOGIN_RESP", confrim = "Deny" }
+						sendBankNetwork(packet.src,response) --Say login failed
+						return
+					end
+				end
+				response = { type = "LOGIN_RESP", confrim = "Void" }
+				sendBankNetwork(packet.src,response) --Say user not found
+				return
+			elseif payload.type == "BALANCE_REQUEST" then
+				local response = { type="BALANCE_RESP", balance = usernames[payload.user].balance }
+				if side == bankInterface then -- Send data unencrypted since it's on a safe seperate network
+					sendBankNetwork(packet.src,response)
+				elseif side == publicInterface then -- Send data encrypted since it's on a public network
+					response = xor(response,packet.uid:match("%-(%d+)$")) -- Use src computerID as encryption key
+					sendPacket(packet.src,response) -- Send data encrypted
+				end
+			elseif payload.type == "ACCT_CREATE_REQ" then
+				if not usernames[payload.username] then
+					usernames[payload.username] = { pass = payload.password, balance = accntFee }
+				else
+					sendPacket(packet.src, { type="ERROR", message="Username already taken, try a different username" } )
+				end
+			elseif payload.type == "BALANCE_UPDATE" then
+				if payload.deposit then
+					usernames[payload.user].balance = usernames[payload.user].balance + payload.deposit
+				elseif payload.withdrawl then
+					usernames[payload.user].balance = usernames[payload.user].balance - payload.withdrawl
+				end
             else
                 debugPrint(("Message from %s: %s"):format(packet.src, textutils.serialize(payload)))
 				return
@@ -216,7 +281,6 @@ local function receiveLoop(packet,side)
         end
     end
 end
-
 
 local function listener()
     while true do
@@ -240,6 +304,18 @@ local function cliLoop()
         elseif cmd=="set" and args[2]=="BNP" and args[3] then
             myBNP=args[3]; saveBNP(); print("BNP set to "..myBNP)
         elseif cmd=="BNP" then print("Current BNP: "..tostring(myBNP))
+		elseif cmd == "setpublicinterface" then --> Set interfaces, public side and private side
+            for i,side in ipairs(modems) do 
+                if side == args[2] and publicInterface ~= modems[i] then -- Change public interface
+                    bankInterface = publicInterface
+                    publicInterface = modems[i]
+                    print("public interface set to:", publicInterface)
+                    break
+                elseif side == args[2] and publicInterface == modems[i] then -- Already public interface
+                    print("Interface is already set as public.")
+                    break
+                end
+            end
         elseif cmd=="debugmode" and args[2] then
             if args[2] == "true" then
                 DEBUG = true

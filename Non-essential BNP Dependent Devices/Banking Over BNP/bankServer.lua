@@ -286,7 +286,7 @@ local function cliLoop()
             myIP=args[3]; saveIP(); print("IP set to "..myIP)
         elseif cmd=="ip" then print("Current IP: "..tostring(myIP))
         elseif cmd == "setpublicinterface" then --> Set interfaces, public side and private side
-            for i,side in ipairs(modems) do 
+            for i,side in ipairs(modems) do
                 if side == args[2] and publicInterface ~= modems[i] then -- Change public interface
                     bankInterface = publicInterface
                     publicInterface = modems[i]
