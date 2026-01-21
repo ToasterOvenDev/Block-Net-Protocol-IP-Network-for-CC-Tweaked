@@ -1,7 +1,32 @@
 -- cell_tower.lua v2.2 (Multi-channel support + NAT + automatic cleanup)
 local VERSION = "2.2"
+
 local DEBUG = false
-local function dprint(msg) if DEBUG then print("[DEBUG] "..msg) end end
+local debugFile = "tower.log"
+if not fs.exists(debugFile) then
+    local f = fs.open(debugFile,"w")
+    f.write("")
+    f.close()
+else
+    fs.delete(debugFile)
+    local f = fs.open(debugFile,"w")
+    f.write("")
+    f.close()
+end
+
+local function debugPrint(msg,fileOnly)
+    fileOnly = fileOnly or false
+    local time = os.date("%H:%M:%S")
+	local f = fs.open(debugFile,"a")
+	f.writeLine("[DEBUG "..time.."] " .. msg)
+	f.close()
+    if DEBUG and fileOnly then
+		return
+    elseif DEBUG then
+        print("[DEBUG] " .. msg)
+    end
+end
+debugPrint("[BOOT] Started logging",true)
 
 -- SELF-LAUNCH IN MULTISHELL
 if type(multishell) == "table" and type(multishell.getCurrent) == "function" then
@@ -39,11 +64,9 @@ for s, m in pairs(interfaces) do
         m.open(1)
         m.open(PRIVATE_CHANNEL)
     end)
-    dprint("Opened modem on "..s.." (channels 1 + "..tostring(PRIVATE_CHANNEL)..")")
+    debugPrint("Opened modem on "..s.." (channels 1 + "..tostring(PRIVATE_CHANNEL)..")")
 end
 
-local wireless = interfaces[wirelessSide]
-local wired = interfaces[wiredSide]
 print("Wireless: "..wirelessSide..", Wired: "..wiredSide)
 
 -- LOAD OR CREATE TOWER BNP
@@ -51,7 +74,7 @@ local towerBNP
 if fs.exists(TOWER_BNP_FILE) then
     local f = fs.open(TOWER_BNP_FILE,"r") towerBNP = f.readLine() f.close()
 else
-    towerBNP = "10.10.10."..os.getComputerID()
+    towerBNP = "10.10.80."..os.getComputerID()
     local f = fs.open(TOWER_BNP_FILE,"w") f.writeLine(towerBNP) f.close()
     print("Assigned BNP: "..towerBNP)
 end
@@ -61,7 +84,6 @@ local seq = 0
 local function makeUID() seq = seq + 1; return tostring(seq) .. "-" .. tostring(os.getComputerID()) end
 local seen = {}
 local hosts = {}           -- learned hosts (BNP -> side name)
-local lastSeen = {}
 local natTable = {}        -- NAT: client BNP -> {originalDst, lastSeen}
 local knownChannels = {}   -- BNP -> private_channel learned from HELLO_REPLY / S_H
 
@@ -69,8 +91,7 @@ local knownChannels = {}   -- BNP -> private_channel learned from HELLO_REPLY / 
 local function learnHost(BNP, side)
     if not BNP or not side then return end
     hosts[BNP] = side
-    lastSeen[BNP] = os.clock()
-    dprint("Learned host "..BNP.." via "..side)
+    debugPrint("[ROUTING] Learned host "..BNP.." via "..side)
 end
 
 local function transmitToSide(side, packet)
@@ -78,11 +99,11 @@ local function transmitToSide(side, packet)
     if not m then return end
     local dstCh = knownChannels[packet.dst] or 1
     m.transmit(dstCh, PRIVATE_CHANNEL, packet)
-    dprint(("Transmitted to %s on ch %s (from private %s): %s"):format(side, tostring(dstCh), tostring(PRIVATE_CHANNEL), tostring(packet.uid)))
+    debugPrint(("[ROUTING] Transmitted to %s on ch %s (from private %s): %s"):format(side, tostring(dstCh), tostring(PRIVATE_CHANNEL), tostring(packet.uid)))
 end
 
 local function broadcastExcept(excludeSide, packet)
-    for s, m in pairs(interfaces) do
+    for s in pairs(interfaces) do
         if s ~= excludeSide then transmitToSide(s, packet) end
     end
 end
@@ -107,45 +128,54 @@ local function handlePacket(packet, incomingSide)
             local reply = { uid = makeUID(), src = towerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "HELLO_REPLY", private_channel = PRIVATE_CHANNEL } }
             -- reply using the sender's known channel if we have it, else broadcast on the incoming side
             transmitToSide(incomingSide, reply)
-            dprint("Replied to HELLO_REQUEST from "..tostring(packet.src).." on side "..incomingSide)
+            debugPrint("[HELLO] Replied to HELLO_REQUEST from "..tostring(packet.src).." on side "..incomingSide)
             return
         elseif payload.type=="HELLO_REPLY" then
             -- learn the private channel of whoever replied (this helps for directed replies)
-            if payload.private_channel then knownChannels[packet.src] = payload.private_channel; dprint("Learned private channel "..tostring(payload.private_channel).." for side "..incomingSide) end
+            if payload.private_channel then knownChannels[packet.src] = payload.private_channel; debugPrint("[HELLO] Learned private channel "..tostring(payload.private_channel).." for side "..incomingSide) end
             learnHost(packet.src, incomingSide)
             return
         elseif payload.type=="PING" then
             if packet.dst==towerBNP then
                 local reply = { uid = makeUID(), src = towerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "PING_REPLY", message = "pong" } }
                 transmitToSide(incomingSide, reply)
-                dprint("Ping reply sent to "..packet.src)
+                debugPrint("[PING] Ping reply sent to "..packet.src)
                 return
             end
         end
     end
 
     -- NAT forwarding
-    -- If incoming is wireless -> forward to wired (rewrite src to towerBNP)
-    if incomingSide == wirelessSide then
-        -- record NAT mapping for this client
-        natTable[packet.src] = { originalDst = packet.dst, lastSeen = os.clock() }
-        local forwardPacket = { uid = makeUID(), src = towerBNP, dst = packet.dst, ttl = packet.ttl, payload = packet.payload }
-        transmitToSide(wiredSide, forwardPacket)
-        return
-    end
 
-    -- incoming from wired: try to map back to client
-    if incomingSide == wiredSide then
-        for clientBNP, info in pairs(natTable) do
-            -- if the incoming packet looks like a reply from the external dest back to towerBNP, forward to client
-            if packet.dst == towerBNP and packet.src == info.originalDst then
-                local forwardPacket = { uid = makeUID(), src = packet.src, dst = clientBNP, ttl = packet.ttl, payload = packet.payload }
-                transmitToSide(wirelessSide, forwardPacket)
-                info.lastSeen = os.clock()
-                return
-            end
-        end
-    end
+	local function InorOut() -- NAT helper that determines if the packet in on a NAT In port or a NAT Out port
+		if incomingSide == wiredSide then
+			return true,false
+		elseif incomingSide == wirelessSide then
+			return false,true
+		else
+			return false,false
+		end
+	end
+
+	local packetin, packetout = InorOut() -- If the packet is coming from a in or out port
+	if packetout then -- Handles if packets are coming from the outside
+		local portNum = packet.dst:match(":(%d+)$")
+		debugPrint("[NAT] Attempting to translate: "..packet.dst.." port is: "..portNum,true)
+		for port,trueBNP in pairs(natTable) do
+			if portNum == port then
+				debugPrint("[NAT] Translation successful")
+				packet.dst = trueBNP
+				break
+			end
+		end
+	elseif packetin then -- Handles if the packets are coming from the inside
+		local port = packet.uid:match("%-(%d+)$") -- Uses the computer ID from the UID of the packet as the port number, so the translation can act as a persistant outside address
+		natTable[port] = packet.src
+		packet.src = towerBNP..":"..port
+		debugPrint("[NAT] NAT translation "..natTable[port].." -> "..towerBNP..":"..port,true)
+	else
+		print("Packet is somehow coming from neither wireless or wired side")
+	end
 
     -- If dst is broadcast -> forward to other side(s)
     if packet.dst == "0" then
@@ -169,7 +199,7 @@ local function natCleanup()
     while true do
         for clientBNP, info in pairs(natTable) do
             if os.clock() - info.lastSeen > NAT_TIMEOUT then
-                dprint("Removing stale NAT entry for "..clientBNP)
+                debugPrint("[NAT] Removing stale NAT entry for "..clientBNP)
                 natTable[clientBNP] = nil
             end
         end
@@ -180,7 +210,7 @@ end
 local function seenCleanup()
     while true do
         seen = {}
-        dprint("Cleared seen UID cache")
+        debugPrint("[UID] Cleared seen UID cache")
         os.sleep(300)
     end
 end
@@ -188,7 +218,7 @@ end
 local function channelCleanup()
     while true do
     	knownChannels = {} -- empties out knownChannels so that it doesn't eat up too much memory
-        dprint("Cleared channels cache")
+        debugPrint("[CHANNEL] Cleared channels cache")
         os.sleep(HELLO_INTERVAL*10)
     end
 end
@@ -223,7 +253,7 @@ local function help()
         "exit"
     }
     print("Cell tower version " .. VERSION .. " commands: ")
-    for i,cmd in ipairs(cmds) do
+    for _,cmd in ipairs(cmds) do
         print("    "..cmd)
     end
 end

@@ -22,10 +22,32 @@ end
 -- ==========================
 -- DEBUG MODE
 -- ==========================
-local DEBUG = false
-local function debugPrint(msg)
-    if DEBUG then print("[DEBUG] " .. msg) end
+local debugFile = "server.log"
+if not fs.exists(debugFile) then
+    local f = fs.open(debugFile,"w")
+    f.write("")
+    f.close()
+else
+    fs.delete(debugFile)
+    local f = fs.open(debugFile,"w")
+    f.write("")
+    f.close()
 end
+
+local DEBUG = false
+local function debugPrint(msg,fileOnly)
+    fileOnly = fileOnly or false
+    local time = os.date("%H:%M:%S")
+	local f = fs.open(debugFile,"a")
+	f.writeLine("[DEBUG "..time.."] " .. msg)
+	f.close()
+    if DEBUG and fileOnly then
+		return
+    elseif DEBUG then
+        print("[DEBUG] " .. msg)
+    end
+end
+debugPrint("[BOOT] Started logging",true)
 
 -- ==========================
 -- FINDS MODEMS (can also find other peripherals, just add a new var and a new if for p's type)

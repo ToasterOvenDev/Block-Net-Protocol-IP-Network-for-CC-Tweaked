@@ -188,7 +188,7 @@ local function selectBestTower(src, distance, towerChannel)
         oldTower = connectedTowerBNP
     end
     if type(src) ~= "string" then return end
-    if not src:match("^10%.10%.10%.") then
+    if not src:match("^10%.10%.80%.") then
         debugPrint("Ignoring non-tower BNP: " .. tostring(src))
         return
     end
@@ -336,9 +336,7 @@ local function receiveLoop()
                     -- reply with our private info
                     replyHello(message.src, payload.private_channel)
                 elseif payload.type == "HELLO_REPLY" then
-                    -- Tower reply should include its private channel optionally
-                    local towerChan = payload.private_channel
-                    selectBestTower(message.src, distance or math.huge, towerChan)
+                    selectBestTower(message.src, distance or math.huge, payload.private_channel)
                 elseif payload.type == "FILE_CHUNK" then
                     if not receivingFile then
                         receivingFile = true

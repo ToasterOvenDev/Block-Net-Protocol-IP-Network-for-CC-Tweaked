@@ -31,14 +31,12 @@ local DEBUG = false
 local function debugPrint(msg,fileOnly)
     fileOnly = fileOnly or false
     local time = os.date("%H:%M:%S")
+	local f = fs.open(debugFile,"a")
+	f.writeLine("[DEBUG "..time.."] " .. msg)
+	f.close()
     if DEBUG and fileOnly then
-        local f = fs.open(debugFile,"a")
-        f.writeLine("[DEBUG "..time.."] " .. msg)
-        f.close()
+		return
     elseif DEBUG then
-        local f = fs.open(debugFile,"a")
-        f.writeLine("[DEBUG "..time.."] " .. msg)
-        f.close()
         print("[DEBUG] " .. msg)
     end
 end
