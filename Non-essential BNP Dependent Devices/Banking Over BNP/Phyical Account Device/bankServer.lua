@@ -63,19 +63,16 @@ local function findModems()
         end
 		if peripheral.hasType(side, "Create_StockTicker") then
 			stockTicker = peripheral.wrap(side)
-			debugPrint("Found StockTicker")
+			debugPrint("[VAULT] Found StockTicker",true)
 		end
     end
-	debugPrint("If StockTicker not connected full bank functionality is not possible")
+	debugPrint("[VAULT] If StockTicker not connected full bank functionality is not possible",true)
 end
 
 findModems()
 
 local publicInterface = modems[1]
 local bankInterface = modems[2]
-
-debugPrint(textutils.serialize(peripheral.getMethods(publicInterface)),true)
-debugPrint(textutils.serialize(peripheral.getMethods(bankInterface)),true)
 
 local function setUpInterfaces()
     findModems()
@@ -93,7 +90,6 @@ local function setUpInterfaces()
 
     if next(interfaces) == nil then error("No modems found!") end
 end
-setUpInterfaces()
 
 -- CONFIGURATION VARIABLES
 local accntFee = -50 -- A negitive number that represents the cost of creating an account
@@ -140,7 +136,8 @@ if not fs.exists(configFile) then
 	f.close()
 else
 	local f = fs.open(configFile,"r")
-	local config = f.readAll()
+	local config = textutils.unserialise(f.readAll())
+	debugPrint("[CONFIG]"..textutils.serialize(config),true)
 	if config == "" then
 		serverConfigs = {
 			usernames = {},
@@ -155,14 +152,20 @@ else
 end
 
 -- Load public interface
-for i, side in pairs(modems) do
-	if serverConfigs.publicSide == side then
-		debugPrint("Public side found loading...")
-		bankInterface = publicInterface
-        publicInterface = modems[i]
-		setUpInterfaces()
-        break
+if serverConfigs.publicSide ~= publicInterface then
+ 	-- If the loaded public side is not the publicInterface then search the located modems for the public Side and set up interfaces
+	debugPrint("Attempting to find loaded public side")
+	for i, side in pairs(modems) do
+		if serverConfigs.publicSide == side then
+			debugPrint("Public side found setting up...")
+			bankInterface = publicInterface
+			publicInterface = modems[i]
+			setUpInterfaces()
+			break
+		end
 	end
+else
+	setUpInterfaces() -- If the loaded public side is already the publicInterface then just setup the interfaces
 end
 
 -- ==========================
@@ -191,7 +194,7 @@ local function sendPacket(dst,payload)
         return
     end
     local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=64, payload=payload }
-    publicInterface.transmit(routerChannel, PRIVATE_CHANNEL, packet)
+    interfaces[publicInterface].transmit(routerChannel, PRIVATE_CHANNEL, packet)
 end
 
 local function sendBankNetwork(dst,payload)
@@ -200,7 +203,7 @@ local function sendBankNetwork(dst,payload)
         return
     end
     local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=64, payload=payload }
-    bankInterface.transmit(1200, 1200, packet)
+    interfaces[bankInterface].transmit(1200, 1200, packet)
 end
 
 local function broadcast(payload)
@@ -250,19 +253,24 @@ end
 
 local function receiveLoopBank(packet,side)
     if type(packet)=="table" and myBNP and (packet.dst==myBNP or packet.dst=="0") then
+		debugPrint("Valid Packet, processing",true)
         local payload = packet.payload
 		local username
 		if payload.user then
 			username = serverConfigs.usernames[payload.user]
+			debugPrint("Direct Username and Pass provided, no need to translate card number and pin")
 		elseif payload.card then
+			debugPrint("Finding card num and matching to provided card")
 			for user, info in pairs(serverConfigs.usernames) do
 				if info.cardNum == payload.card then
 					username = serverConfigs.usernames[user]
+					debugPrint("Found card")
 					break
 				end
 			end
 		end
 		if payload.card and username.cardNum == payload.card and username.pin == payload.pin then
+			debugPrint("Card number and Pin are correct, translating password")
 			payload.pass = username.pass
 		end
         if type(payload)~="table" then
@@ -290,7 +298,7 @@ local function receiveLoopBank(packet,side)
 				end
 			elseif payload.type == "ACCT_CREATE_REQ" then
 				if not username then
-					username = { pass = payload.password, balance = accntFee, transactions = {} }
+					username = { pass = payload.pass, balance = accntFee, transactions = {} }
 					sendBankNetwork(packet.src, { type="ACCT_CREATED" } )
 					debugPrint("Account created username: "..payload.user)
 					saveConfigs()
@@ -367,10 +375,12 @@ local function receiveLoopBank(packet,side)
 				end
 				saveConfigs()
             else
-                debugPrint(("Message from %s: %s"):format(packet.src, textutils.serialize(payload)))
+                debugPrint(("Unknown Packet Type from %s: %s"):format(packet.src, textutils.serialize(payload)))
 				return
             end
         end
+	else
+		debugPrint("Invalid Packet")
     end
 end
 
@@ -523,6 +533,9 @@ local function cliLoop()
                     bankInterface = publicInterface
                     publicInterface = modems[i]
                     print("public interface set to:", publicInterface)
+					interfaces[publicInterface].closeAll()
+					interfaces[bankInterface].closeAll()
+					setUpInterfaces()
                     break
                 elseif side == args[2] and publicInterface == modems[i] then -- Already public interface
                     print("Interface is already set as public.")
