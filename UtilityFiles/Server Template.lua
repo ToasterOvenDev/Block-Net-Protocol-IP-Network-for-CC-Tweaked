@@ -228,7 +228,7 @@ end
 -- CLI LOOP
 -- ==========================
 local function cliLoop()
-    print("Server ready. Commands: set BNP <BNP>, set password <password>, BNP, list hosts, exit")
+    print("Server ready. Commands: set BNP <BNP>, set password <password>, BNP, exit")
     while true do
         io.write("> ")
         local line = io.read()
@@ -247,7 +247,7 @@ local function cliLoop()
                 DEBUG = false
 			end
         else
-            print("Commands: set BNP <BNP>, set password <password>, BNP, list hosts, exit")
+            print("Commands: set BNP <BNP>, set password <password>, BNP, exit")
         end
     end
 end
