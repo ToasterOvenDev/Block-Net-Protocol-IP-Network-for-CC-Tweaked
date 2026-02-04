@@ -85,8 +85,8 @@ local function setUpInterfaces()
         pi.open(PRIVATE_CHANNEL)  -- unicast
         bi.open(1200)			  -- Banking Channel
     end)
-    print("Opened public modem on side "..publicInterface.." (channels 1 + "..PRIVATE_CHANNEL.." + 1200)")
-    print("Opened bank modem on side "..bankInterface.." (channels 1 + "..PRIVATE_CHANNEL.." + 1200)")
+    print("Opened public modem on side "..publicInterface.." (channels 1 + "..PRIVATE_CHANNEL)
+    print("Opened bank modem on side "..bankInterface.." (channels 1200)")
 
     if next(interfaces) == nil then error("No modems found!") end
 end
@@ -281,25 +281,25 @@ local function receiveLoopBank(packet,side)
 				debugPrint("Login attempt with username: "..payload.user.." and password: "..payload.pass)
 				local response
 				if not username then
-					response = { type = "LOGIN_RESP", confrim = "Void" }
+					response = { type = "LOGIN_RESP", confirm = "Void" }
 					sendBankNetwork(packet.src,response) --Say user not found
 					debugPrint("Login attempt failed, user not found")
 					return
 				elseif payload.pass == username.pass then
-					response = { type = "LOGIN_RESP", confrim = "Allow", accountInfo = username }
+					response = { type = "LOGIN_RESP", confirm = "Allow", accountInfo = username }
 					sendBankNetwork(packet.src,response) --Say login succeeds
 					debugPrint("Login attempt succeeded")
 					return
 				else
-					response = { type = "LOGIN_RESP", confrim = "Deny" }
+					response = { type = "LOGIN_RESP", confirm = "Deny" }
 					sendBankNetwork(packet.src,response) --Say login failed
 					debugPrint("Login attempt failed, password incorrect")
 					return
 				end
 			elseif payload.type == "ACCT_CREATE_REQ" then
 				if not username then
-					username = { pass = payload.pass, balance = accntFee, transactions = {} }
-					sendBankNetwork(packet.src, { type="ACCT_CREATED" } )
+					serverConfigs.usernames[payload.user] = { pass = payload.pass, balance = accntFee, transactions = {"Created Account -50"} }
+					sendBankNetwork(packet.src, { type="ACCT_CREATED", accountInfo = serverConfigs.usernames[payload.user] } )
 					debugPrint("Account created username: "..payload.user)
 					saveConfigs()
 				else
@@ -314,15 +314,29 @@ local function receiveLoopBank(packet,side)
 			elseif payload.type == "BALANCE_UPDATE" then
 				if payload.pass ~= username.pass then return end
 				local amount
+				local transaction
 				if payload.deposit then
 					debugPrint("Deposit accepted for "..tostring(payload.deposit).." User: "..payload.user)
 					amount = payload.deposit
 					username.balance = username.balance + amount
+					transaction = "Deposit of "..tostring(amount)
+					--[[ Idea to confirm a deposit is real 
+						Make a listener device (possibly a function within the bankServer file) that is connected to a stockTicker that all ATMs and Bank Tellers send their deposits
+						This listener will wait for the package_received event and once it does it will fire a custom event called "payment_received"
+						the payment_received event will have the amount of money within the package along with the address of the package
+
+						When a deposit packet is recieved from an ATM or BT the bankServer will save the ATM or BT's address, user, and deposit amount into a table and once the payment_received event
+						is fired (or a packet if the device is seperate) they will subtract the amount in the fired event from the deposit amount saved in the table until the entire amount has been reached
+						which then it will update the account info and send a confirmation to the ATM
+
+						This system may make it possible to have a public deposit
+					]]
 				elseif payload.withdrawl then
-					if username.balance >= payload.withdrawl then
+					if username.balance >= payload.withdrawl and username.balance > 0 then -- we make sure the account has enough and isn't negitive
 						debugPrint("Withdrawl accepted for "..tostring(payload.deposit).." User: "..payload.user)
 						amount = payload.withdrawl * -1
 						username.balance = username.balance + amount
+						transaction = "Withdrawl for "..tostring(amount)
 						--Next use a stock ticker to send a package of the amount to the ATM that sent the withdrawl
 					else
 						debugPrint("Withdrawl denied for "..tostring(payload.deposit).." User: "..payload.user)
@@ -331,16 +345,17 @@ local function receiveLoopBank(packet,side)
 					end
 				end
 				if #username.transactions > 25 then
-					table.remove(username.transactions,1)
+					table.remove(username.transactions)
 				end
-				table.insert(username.transactions,amount)
+				table.insert(username.transactions, 1, transaction)
 				saveConfigs()
 			elseif payload.type == "WIRE_TRANSFER" then
 				if payload.pass ~= username.pass then return end
 				local srcAcct = username.balance
 				local dstAcct = serverConfigs.usernames[payload.wireDst]
+				local transaction
 				if not dstAcct then sendBankNetwork(packet.src,{ type="ERROR", message="Destination account does not exist" } ) return end
-				if srcAcct >= payload.amount then
+				if srcAcct >= payload.amount and srcAcct > 0 then -- we make sure the account has enough and isn't negitive
 					srcAcct = srcAcct - payload.amount
 					dstAcct.balance = dstAcct.balance + payload.amount
 					debugPrint("Source User: "..payload.user.." Destination User: "..payload.wireDst.." Amount: "..payload.amount)
@@ -349,15 +364,16 @@ local function receiveLoopBank(packet,side)
 					debugPrint("Failed to wire from "..payload.user.."to "..payload.wireDst)
 					return
 				end
-				local amount = payload.amount *-1
+				transaction = payload.wireDst.." "..tostring(payload.amount *-1)
 				if #username.transactions > 25 then
-					table.remove(username.transactions,1)
+					table.remove(username.transactions)
 				end
-				table.insert(username.transactions,amount)
+				table.insert(username.transactions, 1, transaction)
+				transaction = payload.user.." +"..payload.amount
 				if #dstAcct.transactions > 25 then
-					table.remove(dstAcct.transactions,1)
+					table.remove(dstAcct.transactions)
 				end
-				table.insert(dstAcct.transactions, payload.amount)
+				table.insert(dstAcct.transactions, 1, transaction)
 				saveConfigs()
 			elseif payload.type == "REGISTER_PIN" then
 				if payload.pass ~= username.pass then return end
@@ -414,21 +430,21 @@ local function receiveLoopPublic(packet,side)
 				debugPrint("Login attempt with username: "..payload.user.." and password: "..payload.pass)
 				local response
 				if not username then
-					response = { type = "LOGIN_RESP", confrim = "Void" }
+					response = { type = "LOGIN_RESP", confirm = "Void" }
 					sendPacket(packet.src,response) --Say user not found
 					return
 				elseif payload.pass == username.pass then
-					response = { type = "LOGIN_RESP", confrim = "Allow", balance = username.bal }
+					response = { type = "LOGIN_RESP", confirm = "Allow", balance = username.bal, transactions = username.transactions }
 					sendPacket(packet.src,response) --Say login succeeds
 					return
 				else
-					response = { type = "LOGIN_RESP", confrim = "Deny" }
+					response = { type = "LOGIN_RESP", confirm = "Deny" }
 					sendPacket(packet.src,response) --Say login failed
 					return
 				end
 			elseif payload.type == "ACCT_CREATE_REQ" then
 				if not username then
-					username = { pass = payload.password, balance = accntFee }
+					username = { pass = payload.password, balance = accntFee, transactions = {} }
 					saveConfigs()
 				else
 					sendPacket(packet.src, { type="ERROR", message="Username already taken, try a different username" } )
@@ -503,7 +519,14 @@ local function listener()
     while true do
         local _, side, _, _, msg = os.pullEvent("modem_message")
 		if side == bankInterface then
-        	debugPrint("Packet from bank interface")
+			--[[
+			Idea: make a security feature where a ATM registration process occurs
+			one the bankServer has a password needed to register an ATM
+			two the bank gives the ATM an encrypted key and adds that key to a registered ATM's table
+			if the packet comes from the bank side the bank checks registered ATMs and discards the packet if it hasn't come from a registered ATM
+			This can prevent a malisious user from faking a large balance by just gaining access to the bank network wires
+        	]]
+			debugPrint("Packet from bank interface")
 			receiveLoopBank(msg,side)
 		elseif side == publicInterface then
 			debugPrint("Packet from public interface")
@@ -515,7 +538,7 @@ end
 -- CLI LOOP
 -- ==========================
 local function cliLoop()
-    print("Server ready. Commands: set BNP <BNP>, set password <password>, BNP, setpublicinterface [interface], exit")
+    print("Server ready. Commands: set BNP [BNP], BNP, setpublicinterface [interface], exit")
     while true do
         io.write("> ")
         local line = io.read()
@@ -544,6 +567,8 @@ local function cliLoop()
             end
 			serverConfigs.publicSide = args[2]
 			saveConfigs()
+		elseif cmd=="reset-atms" then
+			sendBankNetwork(0,{ type="RESET" })
         elseif cmd=="debugmode" and args[2] then
             if args[2] == "true" then
                 DEBUG = true
@@ -551,7 +576,7 @@ local function cliLoop()
                 DEBUG = false
 			end
         else
-            print("Commands: set BNP <BNP>, set password <password>,  BNP, setpublicinterface [interface], exit")
+            print("Commands: set BNP [BNP],  BNP, setpublicinterface [interface], exit")
         end
     end
 end

@@ -1,5 +1,4 @@
 {    
-
     ["coin_copper"] = 0.01,
     ["coinpile_copper"] = 0.09,
     ["coinblock_copper"] = 0.36,

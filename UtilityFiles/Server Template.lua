@@ -61,7 +61,7 @@ for _, side in ipairs({"left", "right", "top", "bottom", "front", "back"}) do
         break
     end
 end
- 
+
 if not modem then
     term.setTextColor(colors.red)
     print("No modem detected on any side. Please attach a modem and restart.")
@@ -115,7 +115,7 @@ if not fs.exsits(configFile) then
 	f.close()
 else
 	local f = fs.open(configFile,"r")
-	local config = f.readAll()
+	local config = textutils.unserialize(f.readAll())
 	if config == "" then
 		serverConfigs = {
 			--Place any server confgis you use here
@@ -139,7 +139,7 @@ end
 
 local function sendPacket(dst,payload)
     if not myBNP then
-        print("Set your BNP first with 'set BNP <BNP>' before sending packets.")
+        print("Set your BNP first with 'set BNP [BNP]' before sending packets.")
         return
     end
     local packet = { uid=makeUID(), src=myBNP, dst=dst, ttl=64, payload=payload }
@@ -217,7 +217,6 @@ local function receiveLoop(packet,side)
     end
 end
 
-
 local function listener()
     while true do
         local _, side, _, _, msg = os.pullEvent("modem_message")
@@ -228,7 +227,7 @@ end
 -- CLI LOOP
 -- ==========================
 local function cliLoop()
-    print("Server ready. Commands: set BNP <BNP>, set password <password>, BNP, exit")
+    print("Server ready. Commands: set BNP [BNP], BNP, debugmode, exit")
     while true do
         io.write("> ")
         local line = io.read()
@@ -247,7 +246,7 @@ local function cliLoop()
                 DEBUG = false
 			end
         else
-            print("Commands: set BNP <BNP>, set password <password>, BNP, exit")
+            print("Commands: set BNP [BNP], BNP, debugmode, exit")
         end
     end
 end

@@ -266,3 +266,154 @@ end
 ensureStartup()
 
 parallel.waitForAny(listener, cliLoop)
+
+
+
+
+
+
+--#region Old beta version of storeServer
+--[[
+local stockTicker = peripheral.find("Create_StockTicker")
+local function lookInStock()
+    local storage = stockTicker.stock(false)
+
+    local function titleCase(str)
+        return (str:gsub("(%a)([%w']*)", function(first, rest)
+            return first:upper() .. rest:lower()
+        end))
+    end
+
+    for i,v in ipairs(storage) do
+        local item = v.name:match(":(.+)")
+        local itemSpaced = item:gsub("_"," ")
+        local itemCapped = titleCase(itemSpaced)
+        v.dname = itemCapped -- Provides a user friendly display name
+    end
+
+    local selection = {}
+
+    for i,v in ipairs(storage) do
+        selection[i] = (tostring(i)..":"..tostring(v.count).." "..v.dname)
+    end
+
+    return selection, storage
+end
+
+peripheral.find("modem",rednet.open)
+
+local stock, storage = lookInStock()
+print(textutils.serialise(stock))
+rednet.host("shopping","Store")
+
+local function matchDNametoName(dname) -- Returns the index of the display name provieded with its match in storage
+    stock,storage = lookInStock()
+    for i,v in ipairs(storage) do
+        if v.dname == dname then
+            return i
+        end
+    end
+    return false
+end
+
+local function listener()
+    while true do
+        local id,mes = rednet.receive()
+        local payload = mes.payload
+        print("Got a message!!")
+        if not payload then
+            print("Bad Packet Dropping...")
+            print(textutils.serialize(mes))
+        elseif payload.type == "STOCK_REQ" then
+            stock,storage = lookInStock()
+            local payload = {
+                type = "STORE_STOCK",
+                stock = stock
+            }
+            rednet.send(id,{payload = payload})
+        elseif payload.type == "BUY_REQ" then
+            local itemNum = matchDNametoName(payload.itemName)
+            if not itemNum then
+                local payload = {
+                    type = "ERROR",
+                    message = "Item not in stock, we apologize!"
+                }
+                rednet.send(id,{payload = payload})
+            else
+                local itemAmt = tonumber(payload.itemAmmount)
+                local address = payload.homeAdd
+                local item =  storage[itemNum].name
+                if itemAmt <= storage[itemNum].count then
+                    stockTicker.requestFiltered(address,{ name = item, _requestCount = itemAmt })
+                    stock,storage = lookInStock()
+                    print(payload.itemAmmount.." "..item.."s purchased")
+                else
+                    local payload = {
+                        type = "ERROR",
+                        message = "Not enough in stock, we apologize!"
+                    }
+                    rednet.send(id,{payload = payload})
+                end
+            end
+        end
+    end
+end
+
+listener()
+
+]]
+--#endregion
+--#region Old beta version of Customer
+--[[
+local function listener()
+    while true do
+        local _,mes = rednet.receive()
+        local payload = mes.payload
+        if payload.type == "STORE_STOCK" then
+            local y = 15
+            for i,v in ipairs(payload.stock) do
+                if i <= y then
+                print(v)
+                else
+                    os.pullEvent("key")
+                    y = y*2
+                end
+            end
+        elseif payload.type == "ERROR" then
+            print(payload.message)
+        end
+    end
+end
+
+
+local function CLI()
+    while true do
+        io.write("> ")
+        local line = io.read()
+        if not line then break end
+        local args = {}
+        for word in line:gmatch("%S+") do table.insert(args, word) end
+        local cmd = args[1]
+        if cmd == "exit" then return
+        elseif cmd == "Stock?" then
+            rednet.send(8,{payload = {type = "STOCK_REQ"}})
+        elseif cmd == "buy" then
+            if not args[4] then 
+                print("Not enough arguments")
+            else
+                local payload = {
+                    type = "BUY_REQ",
+                    itemNum = args[2],
+                    itemAmmount = args[3],
+                    homeAdd = args[4],
+                }
+                rednet.send(8,{payload = payload})
+            end
+        end
+    end
+end
+
+parallel.waitForAny(CLI,listener)
+]]
+
+--#endregion
