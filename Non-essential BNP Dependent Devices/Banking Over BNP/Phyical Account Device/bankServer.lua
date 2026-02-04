@@ -56,6 +56,7 @@ local PRIVATE_CHANNEL = os.getComputerID()
 local modems = {}
 local interfaces = {}
 local stockTicker
+local packager
 local function findModems()
     for _, side in ipairs(peripheral.getNames()) do
         if peripheral.hasType(side, "modem") then
@@ -64,6 +65,9 @@ local function findModems()
 		if peripheral.hasType(side, "Create_StockTicker") then
 			stockTicker = peripheral.wrap(side)
 			debugPrint("[VAULT] Found StockTicker",true)
+		end
+		if peripheral.hasType(side, "Create_Packager") then
+			packager = peripheral.wrap(side)
 		end
     end
 	debugPrint("[VAULT] If StockTicker not connected full bank functionality is not possible",true)
@@ -99,6 +103,26 @@ local routerChannel = 1
 local SERVERNAME = "bankServer.lua"
 local serverConfigs = { usernames = {}, cardsRegistered = 0, publicSide = "back" }
 local configFile = "bankServer.config"
+local values = { -- [[ replace this table with your own currency system (this is the lightman's currency system, link to mod in Readme)
+    		["coin_copper"] = 0.01,
+    		["coinpile_copper"] = 0.09,
+    		["coinblock_copper"] = 0.36,
+    		["coin_iorn"] = 0.10,
+    		["coinpile_iron"] = 0.90,
+			["coinblock_iron"] = 3.60,
+			["coin_gold"] = 1.00,
+    		["coinpile_gold"] = 9.00,
+    		["coinblock_gold"] = 36.00,
+    		["coin_emerald"] = 10.00,
+    		["coinpile_emerald"] = 90.00,
+    		["coinblock_emerald"] = 360.00,
+    		["coin_diamond"] = 100.00,
+    		["coinpile_diamond"] = 900.00,
+    		["coinblock_diamond"] = 3600.00,
+    		["coin_netherite"] = 1000.00,
+    		["coinpile_netherite"] = 9000.00,
+    		["coinblock_netherite"] = 36000.00
+		} --]]
 
 -- ==========================
 -- LOAD OR CREATE BNP
@@ -453,7 +477,7 @@ local function receiveLoopPublic(packet,side)
 			elseif payload.type == "BALANCE_REQUEST" then
 				if payload.pass ~= username.pass then return end
 				local response = { type="BALANCE_RESP", balance = username.balance }
-				response = xor(response,packet.uid:match("%-(%d+)$")) -- Use src computerID as encryption key
+				response = xor(response,packet.uid:match("%-(%d+)$")) -- Use src computerID as encryption key (change to only encrypt balance)
 				sendPacket(packet.src,response) -- Send data encrypted
 				return
 			elseif payload.type == "BALANCE_UPDATE" then
@@ -533,6 +557,38 @@ local function listener()
 			receiveLoopPublic(msg,side)
 		end
     end
+end
+
+local function depositConfimLoop() --Loop that checks for when a deposit has been recieved, the attached address is matched to a deposit recently sent and added to that account
+	local function parseList(list)
+		local newList = {}
+		for slot, item in pairs(list) do
+        	local iname = item.name:match(":(.+)")
+        	if newList[iname] then
+        	    newList[iname].count = newList[iname].count+item.count
+        	else
+        	    newList[iname] = {count = item.count, slot = slot } -- { ["coin_copper"] = { count = 64, slot = 1 }, ["coin_diamond"] = {count = 3, slot = 2 } }
+        	end
+    	end
+		return newList
+	end
+	local function addUp(content)
+		local total = 0
+    	for iname, itemData in pairs(content) do
+			local amount = itemData.count
+        	local itemValue = values[iname] or 0
+        	total = total + (amount * itemValue)
+    	end
+    	return total
+	end
+	while true do
+		local package = os.pullEvent("package_received")
+		local address = package.getAddress() -- The full address of the package (Deposit A10)
+		local contents = parseList(package.list())
+		address = address:match("Deposit (.+)") -- The source of the package (A10) Dropping the destination
+		contents = addUp(contents) -- Value of items in the package
+		os.queueEvent("deposit_received", address, contents)
+	end
 end
 -- ==========================
 -- CLI LOOP
