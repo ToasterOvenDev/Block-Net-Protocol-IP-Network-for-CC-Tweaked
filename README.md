@@ -1,5 +1,7 @@
 # Block-Net Protocol - An IP based network for CC: Tweaked
 
+## Project is on hiadus indefinitly I don't have the freetime anymore to work on it
+
 Block-Net Protocol or BNP is a protocol made for CC: Tweaked that loosely follows real life patterns with IP like addressing and devices that share similarites to their real-life counterparts it also includes a client device with a custom OS ToasterOvenOS which has it's own features and can somewhat work on it's own albeit with far less features
 
 ### To find almost all files use this command:
