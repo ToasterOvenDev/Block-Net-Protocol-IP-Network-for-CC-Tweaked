@@ -30,3 +30,12 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 - Advanced Networking | 0/3 |
 - Bank Networking | 0/4 |
 - GUI Clients | 0/3 |
+
+# Modlist
+- Create
+- FerriteCore ((Neo)Forge)
+- Jade
+- Just Enough Items (JEI)
+- ModernFix
+- Mouse Tweaks
+- Computer Craft (For some reason called project-1378402 on curseforge)
