@@ -1,6 +1,10 @@
-# Block-Net Protocol - An IP based network for CC: Tweaked
+## Project is on semi-hiadus
 
-## Project is on hiadus indefinitly I don't have the freetime anymore to work on it
+I'm really low on free-time right now due to work, school and other life responsibilites. So progress is really slow and I'm only able to work on it once or twice a week if I'm lucky.
+
+Still feel free to contact me if you have issues, but don't expect a quick or timely response (Average resp time probably around 1-2 weeks)
+
+# Block-Net Protocol - An IP based network for CC: Tweaked
 
 Block-Net Protocol or BNP is a protocol made for CC: Tweaked that loosely follows real life patterns with IP like addressing and devices that share similarites to their real-life counterparts it also includes a client device with a custom OS ToasterOvenOS which has it's own features and can somewhat work on it's own albeit with far less features
 
@@ -37,7 +41,7 @@ If you have any questions try checking the [wiki](https://github.com/ToasterOven
 if the problem persists create an Issue on [Github](https://github.com/ToasterOvenDev/CC-Tweaked-IP-Network/issues)
 
 AFTER CREATING AN ISSUE AND CHECKING WIKI
-If the problem is extremely persistent or there's no information try [contacting me](url)
+If the problem is extremely persistent or there's no information try [contacting me](https://github.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/Stable/README.md#contacting-me)
 
 # License
 
@@ -60,6 +64,16 @@ Issue: [issue]
 
 Extra Information: [Extra info]
 
+
+***
+
+or
+
+***
+
+Subject: Github Block-Net Protocol [Your name/username]: [Reason for contact]
+
+[Email body]
 
 ***
 
