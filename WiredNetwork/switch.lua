@@ -208,14 +208,16 @@ local function CLI()
             showRoutingTable()
         elseif cmd == "clear" then
             clearRoutingTable()
-        elseif cmd == "default" and arg[2] == "route" and args[3] and args[4] then
+        elseif cmd == "default" and args[2] == "route" and args[3] then
             local side = args[3]
-            local channel = tonumber(args[4])
-            if side and interfaces[side] then
-                routing_table["default"] = { side = side, channel = channel or 1 }
-				saveRoutingTable()
-				log("Default route set to " .. side .. " with channel: " .. channel)
-            else
+            local channel
+			for _, data in pairs(routing_table) do
+				if side == data.side then
+					channel = data.channel
+					routing_table["default"] = { side = side, channel = channel }
+				end
+			end
+            if not channel then
                 print("Invalid side: " .. tostring(side))
             end
         else
