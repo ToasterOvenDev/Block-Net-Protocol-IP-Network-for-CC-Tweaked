@@ -5,13 +5,13 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 # Current progress
 
 ### Checklist
-0/28 (Can and probably will expand)
+4/28 (Can and probably will expand)
 ***
 #### Basic Networking
-- Basic Network Plan to serve as an example of basic network planning | **WIP** |
-- Backbone (Routers and switches) | **WIP** |
-- CLI Clients | **WIP** |
-- Simple Servers (File Servers, DNS, and possibly another sample server)  | **WIP** |
+- Basic Network Plan to serve as an example of basic network planning | ✓ |
+- Backbone (Routers and switches) | ✓ |
+- CLI Clients | ✓ |
+- Simple Servers (File Servers, DNS, and possibly another sample server)  | ✓ |
 #### Advanced Networking
 - Routers showing off all features (DLR, NAT, RDP) | **WIP** |
 - Replacing Routers with switches to save TTL and ram usage | **WIP** |
@@ -26,7 +26,7 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 - ToasterOvenOS Apps | **WIP** |
 - Web Server Set-up | **WIP** |
 #### Assosiated Descriptions/Tutorials
-- Basic Networking | 0/4 |
+- Basic Networking | 4/4 |
 - Advanced Networking | 0/3 |
 - Bank Networking | 0/4 |
 - GUI Clients | 0/3 |
