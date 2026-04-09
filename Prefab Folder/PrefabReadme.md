@@ -5,7 +5,7 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 # Current progress
 
 ### Checklist
-4/28 (Can and probably will expand)
+4/32 (Can and probably will expand)
 ***
 #### Basic Networking
 - Basic Network Plan to serve as an example of basic network planning | ✓ |
@@ -16,6 +16,8 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 - Routers showing off all features (DLR, NAT, RDP) | **WIP** |
 - Replacing Routers with switches to save TTL and ram usage | **WIP** |
 - Fake Planned expansions to serve as an example of advanced network planning | **WIP** |
+- Multiple DNS with a Master DNS | **WIP** |
+- Traffic Routing to Master DNS Server | **WIP** |
 #### Bank Networking
 - Bank server | **WIP** |
 - ATMs | **WIP** |
@@ -27,7 +29,7 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 - Web Server Set-up | **WIP** |
 #### Assosiated Descriptions/Tutorials
 - Basic Networking | 4/4 |
-- Advanced Networking | 0/3 |
+- Advanced Networking | 0/5 |
 - Bank Networking | 0/4 |
 - GUI Clients | 0/3 |
 
