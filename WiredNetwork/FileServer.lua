@@ -115,7 +115,7 @@ if not fs.exists(PASSWORD_FILE) then
     term.setTextColor(colors.green)
     print(PASSWORD_FILE.." created. Use CLI command 'set password <password>' to assign a server password.")
     term.setTextColor(colors.red)
-    print("IF PASSWORD NOT SET FILE SERVER WILL NOT WORK; TO MAKE PUBLIC RESTART DEVICE AND DO NOT SET PASSWORD!!")
+    print("IF A PASSWORD IS NOT SET THE SERVER WILL REMAIN A PUBLIC FILE SERVER, IF YOU WANT IT TO BE A PUBLIC SERVER PELASE RESTART NOW, OTHERWISE SET A PASSWORD!!")
     term.setTextColor(colors.white)
     SERVER_PASSWORD = nil
 else

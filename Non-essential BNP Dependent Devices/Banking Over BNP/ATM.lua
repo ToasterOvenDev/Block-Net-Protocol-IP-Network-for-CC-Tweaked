@@ -51,20 +51,13 @@ else
     f.close()
 end
 
-local DEBUG = true
-local function debugPrint(msg,fileOnly)
-    fileOnly = fileOnly or false
+local function debugPrint(msg)
     local time = os.date("%H:%M:%S")
 	local f = fs.open(debugFile,"a")
 	f.writeLine("[DEBUG "..time.."] " .. msg)
 	f.close()
-    if fileOnly then
-		return
-    elseif DEBUG then
-        print("[DEBUG] " .. msg)
-    end
 end
-debugPrint("[BOOT] Started logging",true)
+debugPrint("[BOOT] Started logging")
 
 if not modem then
     term.setTextColor(colors.red)
@@ -205,20 +198,6 @@ local function sendChest(schest,dchest)
 	end
 end
 
-local function withdrawlLoop()
-	local o = chests[other]
-	local b = chests[bank]
-	local withdrawn = 0
-	while true do
-		local target = os.pullEvent("Withdrawl_start")
-		repeat
-			withdrawn = addUp(o)
-			os.sleep(5)
-		until withdrawn == target
-		sendChest(o,b)
-	end
-end
-
 local seq = 0
 local function makeUID()
 	seq = seq+1
@@ -226,6 +205,7 @@ local function makeUID()
 end
 
 local function sendPacket(payload)
+	debugPrint("[SENDPACKET] Payload being sent: "..textutils.serialize(payload))
 	local packet = { uid=makeUID(), src=ATMnum, dst=bankBNP, ttl=64, payload=payload }
 	modem.transmit(1200, 1200, packet)
 end
@@ -267,10 +247,9 @@ local function errorPopup(msg)
 		:setBackground(colors.orange)
 		:setSize(31, 10)
 	errorFrame:addLabel()
-		:setText("Error")
+		:setText(msg)
 		:setForeground(colors.red)
 		:setPosition(2, 2)
-		:setText(msg)
 		:setSize(29,4)
 		:setAutoSize(false)
 	errorFrame:addButton()
@@ -346,37 +325,55 @@ end
 
 fillLoginFrame()
 local popup
-
+local transactions
+local balance
+local balanceLabel
+local transactionList
+local loggedIn = false
+local popupOpen = false
 
 local function buildATM(accountInfo)
-	local transactions = accountInfo.transactions
-	local balance = tostring(accountInfo.balance)
+	transactions = accountInfo.transactions
+	balance = tostring(accountInfo.balance)
 	ATMframe = main:addFrame():setBackground(colors.green):setSize(51,19):setVisible(true)
-	local popupOpen = false
+	loggedIn = true
 
 	local function deposit()
+		local function sendRedstoneSignalToOtherChest() -- Literally just activates a redstone signal to send the package on the other side of the other chest
+			redstone.setOutput(chests[other], true)
+			os.sleep(2)
+			redstone.setOutput(chests[other], false)
+		end
 		popupOpen = true
 		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
-		local label = popup:addLabel():setText("Please add deposit amount in inventory on the "..chests[bank].." inventory"):setPosition(2,1):setSize(28,4):setAutoSize(false)
+		local label = popup:addLabel():setText("Please add deposit amount in inventory on the "..chests[bank]):setPosition(2,1):setSize(28,4):setAutoSize(false)
 		local submitted1 = false
+		local total = 0
 		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
 		local button = popup:addButton():setSize(6,1):setPosition(2,10):setBackground(colors.green):setText("Submit")
 		button:onClick(function()
-			local total
+			local packet = { type="BALANCE_UPDATE", deposit = 0, user = username, pass = accountInfo.pass }
 			if submitted1 then
-				popup:destroy()
-				sendChest(chests[bank],chests[other])
-				sendPacket({ type="BALANCE_UPDATE", deposit = total, user = username, pass = accountInfo.pass })
-				popupOpen = false
+				if total > 0 then
+					popup:destroy()
+					sendChest(chests[bank],chests[other])
+					packet.deposit = total
+					sendPacket(packet)
+					popupOpen = false
+					basalt.schedule(sendRedstoneSignalToOtherChest)
+					debugPrint(chests[other])
+				else
+					errorPopup("Deposit must be at least $0.01")
+				end
 			else
 				debugPrint("AddUp")
 				total = addUp(chests[bank])
-				debugPrint("After AddUP")
-				label:setText("You want to deposit $"..total..", correct? After submitting press the button above your head.")
+				debugPrint("After AddUp")
+				label:setText("You want to deposit $"..total..", correct?")
 				button:setText("Yes"):setSize(3,1)
 				popup:addButton():setSize(2,1):setPosition(7,10):setBackground(colors.red):setText("No"):onClick(function()
 					total = addUp(chests[bank])
-					label:setText("You want to deposit "..total..", correct? After submitting press the button above your head.")
+					label:setText("You want to deposit $"..total..", correct? Place correct amount in "..chests[bank].." and press No again to reconfirm")
 				end)
 				submitted1 = true
 			end
@@ -386,7 +383,7 @@ local function buildATM(accountInfo)
 		popupOpen = true
 		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
 		local submitted = false
-		local label = popup:addLabel():setText("Please enter amount to withdrawl | current balance: "..balance):setPosition(2,1):setSize(28,4):setAutoSize(false)
+		local label = popup:addLabel():setText("Please enter amount to withdrawl \n\n current balance: "..balance):setPosition(2,1):setSize(28,4):setAutoSize(false)
 		local amount = popup:addInput():setPosition(2,6):setPlaceholder("Amount")
 		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
 		popup:addButton():setSize(6,1):setPosition(2,10):setText("Submit"):onClick(function()
@@ -394,40 +391,70 @@ local function buildATM(accountInfo)
 				popup:destroy()
 				popupOpen = false
 			else
-				if tonumber(amount:getText()) < 0 then
-					errorPopup("You can't withdrawl a negative number")
-				else
-					label:setText("Waiting for withdrawl amount to arrive from Bank...")
-					sendPacket({ type="BALANCE_UPDATE", withdrawl = tonumber(amount:getText()), user = username, pass = accountInfo.pass })
-					os.queueEvent("Withdrawl_start", tonumber(amount:getText()))
-					amount:destroy()
-					submitted = true
-				end
+				xpcall(
+					function()
+						local numAmount = tonumber(amount:getText())
+						if numAmount < 0 then
+							errorPopup("You can't withdrawl a negative number")
+						elseif tonumber(balance) < numAmount then
+							errorPopup("You can't withdrawl more than you have dummy")
+						else
+							label:setText("Waiting for withdrawl amount to arrive from Bank, please do NOT leave without your payment")
+							sendPacket({ type="BALANCE_UPDATE", withdrawl = numAmount, user = username, pass = accountInfo.pass })
+							os.queueEvent("Withdrawl_start", numAmount)
+							amount:destroy()
+							submitted = true
+						end
+					end,
+					function()
+						errorPopup("You cannot enter anything but a pure number example (13,27.1,1.99).")
+					end)
 			end
 		end)
 	end
 	local function wire()
 		popupOpen = true
 		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
-		popup:addLabel():setText("Please enter amount to wire and account name of wire destination | current balance: "..balance):setPosition(2,1):setSize(28,4):setAutoSize(false)
-		local amount = popup:addInput():setPosition(2,6):setPlaceholder("Amount")
-		local dst = popup:addInput():setPosition(2,7):setPlaceholder("Dest")
+		local label = popup:addLabel():setText("Please enter amount to wire and account name of wire destination | current balance: "..balance):setPosition(2,1):setSize(28,4):setAutoSize(false)
+		local dst = popup:addInput():setPosition(2,6):setPlaceholder("Dest")
+		local amount = popup:addInput():setPosition(2,7):setPlaceholder("Amount")
+		local submitted = false
+		local dest
+		local amt
 		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
 		popup:addButton():setSize(6,1):setPosition(2,10):setText("Submit"):onClick(function()
-			if tonumber(amount:getText()) < 0 then
-				errorPopup("You can't wire a negative number")
+			if submitted then
+				xpcall(function()
+					dest = dst:getText()
+					amt = amount:getText()
+					debugPrint(dest.."  ,  "..amt)
+					sendPacket({ type="WIRE_TRANSFER", user = username, pass = accountInfo.pass, wireDst = dest, amount = tonumber(amt) })
+					popup:destroy()
+					popupOpen = false
+				end,
+				function()
+					errorPopup("You cannot enter anything but a pure number example (13,27.1,1.99).")
+				end)
 			else
-				sendPacket({ type="WIRE_TRANSFER", user = username, pass = accountInfo.pass, wireDst = dst.getText(), amount = amount.getText() })
-				popup:destroy()
-				popupOpen = false
+				dest = dst:getText()
+				amt = amount:getText()
+
+				label:setText("You are trying to wire "..amt.." is that correct?")
+				if tonumber(amt) < 0 then
+					errorPopup("You can't wire a negative number")
+				elseif tonumber(balance) < tonumber(amt)then
+					errorPopup("You canot wire more than you have dummy")
+				else
+					submitted = true
+				end
 			end
 		end)
 	end
 
 	LoginFrame:destroy()
 	ATMframe:addLabel():setText("Username: "..username):setPosition(9,4):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	ATMframe:addLabel():setText("Balance: "..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	local transactionList = ATMframe:addList()
+	balanceLabel = ATMframe:addLabel():setText("Balance: "..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
+	transactionList = ATMframe:addList()
 		:setEmptyText("No Transactions on account")
 		:setPosition(9,6)
 		:setSize(30,11)
@@ -458,9 +485,28 @@ local function buildATM(accountInfo)
 	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(40,12):setSize(5,1):onClick(function()
 			ATMframe:destroy()
 			fillLoginFrame()
+			loggedIn = false
 		end) -- Leave Button
 end
 
+local function withdrawlLoop()
+	local o = chests[other]
+	local b = chests[bank]
+	local withdrawn = 0
+	while true do
+		local _,target = os.pullEvent("Withdrawl_start")
+		debugPrint("Starting Withdrawl loop")
+		repeat
+			withdrawn = addUp(o)
+			os.sleep(5)
+		until withdrawn == target
+		sendChest(o,b)
+		if popupOpen then
+			popup:destroy()
+		end
+		errorPopup("Check Inventory below, Withdrawl has arrived")
+	end
+end
 
 local function packetHandling(packet)
 	local payload = packet.payload
@@ -492,6 +538,15 @@ local function packetHandling(packet)
 		elseif payload.confirm == "Void" then
 			errorPopup("No account with current username")
 		end
+	elseif payload.type == "BALANCE_UPDATE_ACCT_RESP" and loggedIn then
+		transactions = payload.accountInfo.transactions
+		balance = payload.accountInfo.balance
+		transactionList:clear()
+		for _,v in ipairs(transactions) do
+			transactionList:addItem(v)
+		end
+		balanceLabel:setText("Balance: "..balance)
+		debugPrint("Tried to replace transactions and balance")
 	end
 end
 

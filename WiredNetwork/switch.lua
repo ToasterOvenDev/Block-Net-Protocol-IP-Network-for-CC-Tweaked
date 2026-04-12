@@ -72,7 +72,7 @@ end
 local function forwardPacket(side, packet)
     local src = packet.src
     local dst,port = packet.dst:match("^([^:]+):?(%d*)$")
-    
+
     -- Broadcast handling
     if dst == "0" then
         for s, m in pairs(interfaces) do
@@ -144,7 +144,7 @@ end
 local function handleSwitchHello(side, packet)
     local payload = packet.payload
     if not packet.src or not payload.private_channel then log("S_H malformed dropping...") return end
-	if os.clock() - (last_hello[packet.src] or 0) < 2 then log("seen before dropping...") return end
+	if os.clock() - (last_hello[packet.src] or 0) < 2 then log("Seen before dropping...") return end
 	last_hello[packet.src] = os.clock()
     if payload.switch then
         -- Switch detected
@@ -211,12 +211,23 @@ local function CLI()
         elseif cmd == "default" and args[2] == "route" and args[3] then
             local side = args[3]
             local channel
+<<<<<<< Updated upstream
 			for _, data in pairs(routing_table) do
 				if side == data.side then
 					channel = data.channel
 					routing_table["default"] = { side = side, channel = channel }
 				end
 			end
+=======
+            for _, data in pairs(routing_table) do
+                if data.side == side then
+                    channel = data.channel
+                    routing_table["default"] = { side = side, channel = channel}
+                    saveRoutingTable()
+                    log("Default route set to " .. side .. " with channel: " .. channel)
+                end
+            end
+>>>>>>> Stashed changes
             if not channel then
                 print("Invalid side: " .. tostring(side))
             end
@@ -267,5 +278,5 @@ clearLastSeen()
 openInterfaces()
 loadRoutingTable()
 sendSwitchHello()
-log("Switch ready. Type 'discover' to rescan and 'default route <side> <channel>' to set default route. Routing table commands 'show' table and 'clear' table ")
+log("Switch ready. Type 'discover' to rescan and 'default route [side]' to set default route. Routing table commands 'show' table and 'clear' table ")
 parallel.waitForAny(Listener,CLI)

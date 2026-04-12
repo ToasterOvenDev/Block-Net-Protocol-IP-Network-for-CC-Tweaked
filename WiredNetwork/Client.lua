@@ -466,7 +466,11 @@ local function cliLoop() --Command Line Interface loop
         elseif cmd == "bnp" then
             print("Current BNP: "..tostring(myBNP))
 		elseif cmd == "dnsbnp" then
-			print("DNS Server: "..DNSServerBNP)
+			if DNSServerBNP then
+				print("DNS Server: "..DNSServerBNP)
+			else
+				print("DNS Server not found")
+			end
         elseif cmd == "debugmode" and args[2] then
     		if args[2] == "false" then
         		DEBUG = false; print("Debug mode OFF")
