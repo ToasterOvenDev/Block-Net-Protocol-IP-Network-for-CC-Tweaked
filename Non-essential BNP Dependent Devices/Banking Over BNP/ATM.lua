@@ -23,7 +23,7 @@ local values = { -- [[ replace this table with your own currency system (this is
     		["coin_netherite"] = 1000.00,
     		["coinpile_netherite"] = 9000.00,
     		["coinblock_netherite"] = 36000.00
-		} --]] I'm going to change this to request a values from it's bank server on setup and save it here
+		}
 local bankBNP = nil
 local ATMnum = os.getComputerID()
 local setupNeeded = true

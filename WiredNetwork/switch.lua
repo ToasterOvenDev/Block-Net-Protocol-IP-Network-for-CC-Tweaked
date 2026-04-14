@@ -211,14 +211,6 @@ local function CLI()
         elseif cmd == "default" and args[2] == "route" and args[3] then
             local side = args[3]
             local channel
-<<<<<<< Updated upstream
-			for _, data in pairs(routing_table) do
-				if side == data.side then
-					channel = data.channel
-					routing_table["default"] = { side = side, channel = channel }
-				end
-			end
-=======
             for _, data in pairs(routing_table) do
                 if data.side == side then
                     channel = data.channel
@@ -227,7 +219,6 @@ local function CLI()
                     log("Default route set to " .. side .. " with channel: " .. channel)
                 end
             end
->>>>>>> Stashed changes
             if not channel then
                 print("Invalid side: " .. tostring(side))
             end

@@ -157,7 +157,7 @@ else
 	local f = fs.open(configFile,"r")
 	local config = textutils.unserialise(f.readAll())
 	debugPrint("[CONFIG]"..textutils.serialize(config),true)
-	if config == "" then
+	if config == "" or config == nil then
 		serverConfigs = {
 			usernames = {},
 			cardsRegistered = 0,
