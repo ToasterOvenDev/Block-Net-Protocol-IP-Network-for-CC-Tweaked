@@ -368,11 +368,6 @@ local function receiveLoopBank(packet,side)
 					sendBankNetwork(packet.src, { type="ERROR", message="Username already taken, try a different username" } )
 					debugPrint("Account request denied username: "..payload.user)
 				end
-			elseif payload.type == "BALANCE_REQUEST" then
-				if payload.pass ~= username.pass then return end
-				debugPrint("Balance request sent to "..payload.user)
-				local response = { type="BALANCE_RESP", balance = username.balance }
-				sendBankNetwork(packet.src,response)
 			elseif payload.type == "BALANCE_UPDATE" then
 				if payload.pass ~= username.pass then debugPrint("[BALANCE_UPDATE] Failed password check") return end
 				debugPrint("Got an Balance Update packet")
@@ -468,12 +463,25 @@ end
 
 local function receiveLoopPublic(packet,side)
     if type(packet)=="table" and myBNP and (packet.dst==myBNP or packet.dst=="0") then
+        debugPrint("Valid packet, processing, true")
         local payload = packet.payload
 		local username
 		if payload.user then
 			username = serverConfigs.usernames[payload.user]
+			debugPrint("Direct Username and Pass provided, no need to translate card number and pin")
+		elseif payload.card then
+			debugPrint("Finding card num and matching to provided card")
+			for user, info in pairs(serverConfigs.usernames) do
+				if info.cardNum == payload.card then
+					username = serverConfigs.usernames[user]
+					debugPrint("Found card")
+					break
+				end
+			end
 		end
+		debugPrint("Payload type is "..payload.type)
 		if payload.card and username.cardNum == payload.card and username.pin == payload.pin then
+            debugPrint("Card number and Pin are correct, translating password")
 			payload.pass = username.pass
 		end
         if type(payload)~="table" then
@@ -498,68 +506,103 @@ local function receiveLoopPublic(packet,side)
 				if not username then
 					response = { type = "LOGIN_RESP", confirm = "Void" }
 					sendPacket(packet.src,response) --Say user not found
+                    debugPrint("Login attempt failed, user not found")
 					return
 				elseif payload.pass == username.pass then
-					response = { type = "LOGIN_RESP", confirm = "Allow", balance = username.bal, transactions = username.transactions }
+					response = { type = "LOGIN_RESP", confirm = "Allow", accountInfo = username }
 					sendPacket(packet.src,response) --Say login succeeds
+                    debugPrint("Login attempt succeeded")
 					return
 				else
 					response = { type = "LOGIN_RESP", confirm = "Deny" }
 					sendPacket(packet.src,response) --Say login failed
+                    debugPrint("Login attempt failed, password incorrect")
 					return
 				end
 			elseif payload.type == "ACCT_CREATE_REQ" then
 				if not username then
-					username = { pass = payload.password, balance = accntFee, transactions = {} }
+					serverConfigs.usernames[payload.user] = { pass = payload.pass, balance = accntFee, transactions = {"Created Account -50"} }
+					sendPacket(packet.src, { type="ACCT_CREATED", accountInfo = serverConfigs.usernames[payload.user] } )
+					debugPrint("Account created username: "..payload.user)
 					saveConfigs()
 				else
 					sendPacket(packet.src, { type="ERROR", message="Username already taken, try a different username" } )
+                    debugPrint("Account request denied username: "..payload.user)
 				end
 			-- After Login packets
 			elseif payload.type == "BALANCE_REQUEST" then
 				if payload.pass ~= username.pass then return end
 				local response = { type="BALANCE_RESP", balance = username.balance }
-				response = xor(response,packet.uid:match("%-(%d+)$")) -- Use src computerID as encryption key
+				response.balance = xor(response.balance,packet.uid:match("%-(%d+)$")) -- Use src computerID as encryption key
 				sendPacket(packet.src,response) -- Send data encrypted
 				return
 			elseif payload.type == "BALANCE_UPDATE" then
-				if payload.pass ~= username.pass then return end
+				if payload.pass ~= username.pass then debugPrint("[BALANCE_UPDATE] Failed password check") return end
 				local amount
+                local transaction
+				local accepted = false
 				if payload.deposit then
-					amount = payload.deposit
-					username.balance = username.balance + payload.deposit
+                    debugPrint("Deposit accepted for "..tostring(payload.deposit).." User: "..payload.user)
+                    amount = payload.deposit
+					username.balance = username.balance + amount
+					transaction = "Deposit of "..tostring(amount)
+					accepted = true
 				elseif payload.withdrawl then
 					if username.balance >= payload.withdrawl then
+						debugPrint("Withdrawl accepted for "..tostring(payload.withdrawl).." User: "..payload.user)
 						amount = payload.withdrawl * -1
-						username.balance = username.balance - payload.withdrawl
-						--Next use a stock ticker to send a package of the amount to the ATM that sent the withdrawl
+						username.balance = username.balance + amount
+						transaction = "Withdrawl for "..tostring(amount)
+						accepted = true
+
+						local returnAddress = "ATM "..packet.src -- This needs to be changed for public app/website
+						if payload.bankTeller then
+							returnAddress = "BT "..packet.src
+						end
+						withdrawl(payload.withdrawl,returnAddress)
 					else
-						sendPacket(packet.src,{ type="ERROR", message="Not enough in balance for withdrawl" } )
+						debugPrint("Withdrawl denied for "..tostring(payload.deposit).." User: "..payload.user)
+						sendPacket(packet.src,{ type="ERROR", message="Not enough in balance for withdrawl, Balance: ".." Withdrawl amount: "..payload.withdrawl } )
 						return
 					end
+                else
+                    debugPrint("Invalid Balance Update "..textutils.serialize(payload))
 				end
 				if #username.transactions > 25 then
 					table.remove(username.transactions,#username.transactions)
 				end
-				table.insert(username.transactions,1,amount)
+				table.insert(username.transactions,1,transaction)
 				saveConfigs()
+				if accepted then
+					sendPacket(packet.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
+				end
 			elseif payload.type == "WIRE_TRANSFER" then
 				if payload.pass ~= username.pass then return end
 				local srcAcct = username.balance
 				local dstAcct = serverConfigs.usernames[payload.wireDst]
-				if not dstAcct then sendPacket(packet.src,{ type="ERROR", message="Destination account does not exist" } ) return end
+				local transaction
+				if not dstAcct then sendBankNetwork(packet.src,{ type="ERROR", message="Destination account does not exist" } ) return end
 				if srcAcct >= payload.amount then
-					srcAcct = srcAcct - payload.amount
+					username.balance = username.balance - payload.amount
 					dstAcct.balance = dstAcct.balance + payload.amount
+					debugPrint("Source User: "..payload.user.." Destination User: "..payload.wireDst.." Amount: "..tostring(payload.amount))
+					transaction = payload.wireDst.." wire transfer of $"..tostring(payload.amount *-1)
+					if #username.transactions > 25 then
+						table.remove(username.transactions,#username.transactions)
+					end
+					table.insert(username.transactions,1,transaction)
+					transaction = "wire transfer from"..payload.user.." of $"..tostring(payload.amount)
+					if #dstAcct.transactions > 25 then
+						table.remove(dstAcct.transactions,#username.transactions)
+					end
+					table.insert(dstAcct.transactions,1, transaction)
+					saveConfigs()
+					sendPacket(packet.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
 				else
 					sendPacket(packet.src,{ type="ERROR", message="Not enough balance" } )
+					debugPrint("Failed to wire from "..payload.user.."to "..payload.wireDst)
+					return
 				end
-				local amount = payload.amount *-1
-				if #username.transactions > 25 then
-					table.remove(username.transactions,1)
-				end
-				table.insert(username.transactions,amount)
-				saveConfigs()
 			elseif payload.type == "REGISTER_PIN" then
 				if payload.pass ~= username.pass then return end
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
@@ -568,9 +611,11 @@ local function receiveLoopPublic(packet,side)
 					username.cardNum = cardNum
 					username.pin = payload.pin
 					sendPacket(packet.src, {type="PIN_RESP", cardNum = cardNum} )
+                    debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
 					username.pin = payload.pin
 					sendPacket(packet.src, {type="PIN_RESP", changed = true} )
+                    debugPrint("Card changed for "..payload.user)
 				end
 				saveConfigs()
             else
@@ -578,6 +623,8 @@ local function receiveLoopPublic(packet,side)
 				return
             end
         end
+    else
+        debugPrint("Invalid packet")
     end
 end
 
