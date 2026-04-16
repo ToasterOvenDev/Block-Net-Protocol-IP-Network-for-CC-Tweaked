@@ -7,7 +7,7 @@ local function update(filename, webpage) -- Installs the files from github
 	end
 
 	shell.run("wget "..webpage.." "..filename) -- Runs the install command using provided URL and the filename
-	print("Downloaded latest "..filename)
+	print("Downloaded latest stable "..filename)
 end
 
 local function cliLoop()

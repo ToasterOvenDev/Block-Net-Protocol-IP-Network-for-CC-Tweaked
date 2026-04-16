@@ -1,4 +1,4 @@
--- router.lua Version 2.23
+-- router.lua Version 2.56
 -- Secure router with persistent routing, password CLI, clean autostart, safe termination, multi-channel support, switch discovery support
 
 
@@ -41,6 +41,17 @@ local function debugPrint(msg,fileOnly)
 end
 debugPrint("[BOOT] Started logging",true)
 
+-- Simple Encription/Decryption
+local function xor(data, key)
+    local out = {}
+    for i = 1, #data do
+        local db = string.byte(data, i)
+        local kb = string.byte(key, (i - 1) % #key + 1)
+        out[i] = string.char(bit32.bxor(db, kb))
+    end
+    return table.concat(out)
+end
+
 
 -- MONITOR SETUP + INFO LOGGING
 local mon = peripheral.find("monitor")
@@ -62,15 +73,16 @@ end
 
 -- CONFIGURATION
 
-local sides = {"left","right","top","bottom","front","back"}
-local DEFAULT_TTL = 64
-local HELLO_INTERVAL = 60
-local CLI_PASSWORD = "Admin"
-local ROUTING_FILE = "routing_table.txt"
-local BNP_FILE = "BNP.txt"
-local PRIVATE_CHANNEL = os.getComputerID()
-local knownChannels = {}
-local routerNet = "10.10.10"
+local sides = {"left","right","top","bottom","front","back"} -- Table of all the sides
+local DEFAULT_TTL = 64 -- How many hops before you drop a  packet
+local HELLO_INTERVAL = 60 -- How many seconds before sending another Hello
+local CLI_PASSWORD = "Admin" -- Password
+local ROUTING_FILE = "routing_table.txt" -- File to save the routing table to
+local BNP_FILE = "BNP.txt" -- File to save the router BNP
+local PRIVATE_CHANNEL = os.getComputerID() -- Private modem channel
+local knownChannels = {} -- Known channels of directly connected hosts
+local routerNet = "10.10.10" -- The network this router is a part of
+local motd = "" -- Message of the day
 
 --RDP Configs
 
@@ -190,7 +202,7 @@ local function saveRouterServices()
         whLst = whLst,
         blkLst = blkLst,
         denyList = denyList,
-        CLI_PASSWORD = CLI_PASSWORD
+        CLI_PASSWORD = xor(CLI_PASSWORD,PRIVATE_CHANNEL) -- encrypt password before entering it
     }
 
     local f = fs.open("services.txt","w")
@@ -202,7 +214,7 @@ local function loadRouterServices()
     local f = fs.open("services.txt","r")
     local services = textutils.unserialize(f.readAll())
     f.close()
-    if services == "" or services == nil then -- I don't know why this file in particular needed the check for nil instead of empty, but that's why it's different
+    if services == "" or services == nil then
         RDP = false
         RDPfull = { ["left"] = false,["right"] = false,["top"] = false,["bottom"] = false,["front"] = false,["back"] = false }
         RDPSides = {}
@@ -231,7 +243,7 @@ local function loadRouterServices()
         whLst = services.whLst
         blkLst = services.blkLst
         denyList = services.denyList
-        CLI_PASSWORD = services.CLI_PASSWORD
+        CLI_PASSWORD = xor(services.CLI_PASSWORD,PRIVATE_CHANNEL) -- Decrypt password before using it
     end
 
 end
@@ -994,6 +1006,7 @@ local function NATCLI()
 end
 
 local function cli()
+    print(motd)
     local function printHelp()
         print([[Router Commands:
         show [routes,hosts,channels]
@@ -1008,7 +1021,7 @@ local function cli()
         debug [true,false]
         change-pass [newPassword]
         exit
-        terminate
+        motd
         help
     ]])
     end
@@ -1024,23 +1037,18 @@ local function cli()
                 term.clear()
                 term.setCursorPos(1, 1)
                 break
-            elseif cmd == "terminate" then
-                print("Enter password to confirm termination:")
-                local check = read("*")
-                if check == CLI_PASSWORD then
-                    logInfo("Router shutting down...")
-                    terminated = true
-                    return
-                else
-                    print("Incorrect password. Abort termination.")
-                end
+            elseif cmd == "motd" then
+                write("Please enter a motd: ")
+                motd = read()
+                print("motd is now: "..motd)
+                saveRouterServices()
             elseif cmd == "show" then
                 if arg1 == "routes" then
                     for s, i in pairs(routingTable) do
                         print(s .. " -> " .. i)
                     end
                     if defaultRoute then
-                        print("defaultRoute -> " .. defaultRoute)
+                        print("Default Route -> " .. defaultRoute)
                     end
                 elseif arg1 == "hosts" then
                     for h, s in pairs(hosts) do print(h .. " -> " .. s) end
@@ -1064,7 +1072,9 @@ local function cli()
                     print("Invalid side: " .. arg3)
                 else
                     local type = arg2:upper()
-                    trafficRoutingTable[type] = arg3; logInfo("Added route " .. type .. " packets -> " .. arg3); saveRoutingTable()
+                    trafficRoutingTable[type] = arg3
+                    logInfo("Added route " .. type .. " packets -> " .. arg3)
+                    saveRoutingTable()
                 end
             elseif cmd == "del" and arg1 == "route" and arg2 ~= "" then
                 routingTable[arg2] = nil; logInfo("Deleted route for " .. arg2); saveRoutingTable()
@@ -1096,11 +1106,10 @@ local function cli()
 					print("Accepted arguments 'true' or 'false'")
                 end
             elseif cmd == "change-pass" then
-                if arg1 then
-                    print("Password changed to " .. arg1)
-                    CLI_PASSWORD = arg1
-                    saveRouterServices()
-                end
+                write("Please enter a new password: ")
+                CLI_PASSWORD = read()
+                print("Password changed to " .. CLI_PASSWORD)
+                saveRouterServices()
             else
                 print("Unknown command.")
             end
@@ -1120,7 +1129,7 @@ local function cli()
         end
     end
     os.sleep(0.25)
-    print("Router Version 2.22 Loading")
+    print("Router Version 2.56 Loading")
     os.sleep(1)
     passwordEntry()
 end
