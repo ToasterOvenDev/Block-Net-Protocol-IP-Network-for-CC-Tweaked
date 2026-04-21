@@ -1,10 +1,4 @@
 {
-  [ "cumsplash.net" ] = {
-    flags = {
-      "FTP",
-    },
-    BNP = "201.200.40.1",
-  },
   [ "red.com" ] = {
     flags = {
       "FTP",

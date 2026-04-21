@@ -52,6 +52,24 @@ local function xor(data, key)
     return table.concat(out)
 end
 
+local function checkValue(table,value) -- Returns true if the value exists in the table returns false if not
+    for _, v in pairs(table) do
+       if v == value then
+            return true
+       end
+    end
+    return false
+end
+
+local function checkKey(table,key) -- Returns true if the key exists in the table returns false if not
+	for k in pairs(table) do
+		if k == key then
+			return true
+		end
+	end
+	return false
+end
+
 
 -- MONITOR SETUP + INFO LOGGING
 local mon = peripheral.find("monitor")
@@ -82,7 +100,7 @@ local BNP_FILE = "BNP.txt" -- File to save the router BNP
 local PRIVATE_CHANNEL = os.getComputerID() -- Private modem channel
 local knownChannels = {} -- Known channels of directly connected hosts
 local routerNet = "10.10.10" -- The network this router is a part of
-local motd = "" -- Message of the day
+local motd = "Good Morning! :)" -- Message of the day
 
 --RDP Configs
 
@@ -106,6 +124,11 @@ local denyDst = false -- Deny by destination
 local whLst = false -- Only allow the addresses in denyList
 local blkLst = false -- Only deny the addresses in denyList
 local denyList = {} -- What addresses to deny
+
+-- DHCP Configs
+
+local DHCP = false -- If DHCP is enabled
+local dhcpSides = {} -- holds information for DHCP enabled side ["left"] = {currentHost = 1, subnet = "192.168.1."} 
 
 -- STATE
 
@@ -202,7 +225,8 @@ local function saveRouterServices()
         whLst = whLst,
         blkLst = blkLst,
         denyList = denyList,
-        CLI_PASSWORD = xor(CLI_PASSWORD,PRIVATE_CHANNEL) -- encrypt password before entering it
+        CLI_PASSWORD = CLI_PASSWORD,
+        motd = motd,
     }
 
     local f = fs.open("services.txt","w")
@@ -229,6 +253,7 @@ local function loadRouterServices()
         blkLst = false
         denyList = {}
         CLI_PASSWORD = "Admin"
+        motd = "Good Morning! :)"
     else
         RDP = services.RDP
         RDPfull = services.RDPfull
@@ -243,7 +268,8 @@ local function loadRouterServices()
         whLst = services.whLst
         blkLst = services.blkLst
         denyList = services.denyList
-        CLI_PASSWORD = xor(services.CLI_PASSWORD,PRIVATE_CHANNEL) -- Decrypt password before using it
+        CLI_PASSWORD = services.CLI_PASSWORD -- Decrypt password before using it
+        motd = services.motd
     end
 
 end
@@ -478,31 +504,38 @@ local function forwardPacket(packet, incomingSide)
 	end
 
     local function InorOut() -- NAT helper that determines if the packet in on a NAT In port or a NAT Out port
+        debugPrint("[NAT] Testing in or out side for side "..incomingSide,true)
 		for _,side in pairs(natOutsideSides) do -- Actually checks if the packet is coming from outside
 			if incomingSide == side then
+                debugPrint("[NAT] Incoming side is outside",true)
 				return false, true
 			end
 		end
 		for _,side in pairs(natInsideSides) do -- Acutally checks if the packet is coming from inside
 			if incomingSide == side then
+                debugPrint("[NAT] Incoming side is inside",true)
 				return true, false
 			end
 		end
+        debugPrint("[NAT] Incoming side is neither",true)
         return false, false
 	end
 
 	if NAT then -- If nat is enabled do NAT translation processes
+        debugPrint("[NAT] NAT is enabled dst: "..packet.dst..", src: "..packet.src,true)
 		local packetin, packetout = InorOut() -- If the packet is coming from a in or out port
 		if packetout then -- Handles if packets are coming from the outside
 			local portNum = packet.dst:match(":(%d+)$")
-			debugPrint("[NAT] Attempting to translate: "..packet.dst.." port is: "..portNum,true)
-			for port,trueBNP in pairs(natTable) do
-				if portNum == port then
-					debugPrint("[NAT] Translation successful")
-					packet.dst = trueBNP
-					break
-				end
-			end
+            if portNum ~= nil then
+			    debugPrint("[NAT] Attempting to translate: "..packet.dst.." port is: "..portNum,true)
+                for port,trueBNP in pairs(natTable) do
+                    if portNum == port then
+                        debugPrint("[NAT] Translation successful")
+                        packet.dst = trueBNP
+                        break
+                    end
+                end
+            end
 		elseif packetin then -- Handles if the packets are coming from the inside
 			local port = packet.uid:match("%-(%d+)$") -- Uses the computer ID from the UID of the packet as the port number, so the translation can act as a persistant outside address
 			natTable[port] = packet.src
@@ -664,6 +697,49 @@ local function cleanupSeenUIDs()
 end
 
 -- CLIs
+local function DHCPCLI()
+	local function printHelp()
+		print([[DHCP Commands:
+		help
+		enable
+		disable
+		show
+		add [side] [subnet]
+		exit
+		
+		example: 'add left 192.168.1.0'
+		]])
+	end
+
+	while true do
+		io.write("(DHCP)> ")
+		local line = read():lower()
+		if not line then break end
+		local cmd,arg1,arg2,arg3,arg4 = line:match("^(%S+)%s*(%S*)%s*(%S*)%s*(%S*)$")
+		if cmd=="help" then printHelp()
+		elseif cmd=="enable" then DHCP = true print("Enabled DHCP") saveRouterServices()
+		elseif cmd=="disable" then DHCP = false print("Disabled DHCP") saveRouterServices()
+		elseif cmd=="show" then
+			--will show subnet and currentHost of each DHCP enabled side
+		elseif cmd=="add" then
+        	local numGroups = {}
+        	for part in string.gmatch(arg2, "[^.]+") do -- break up str into groups seperated by the .'s (192.168.1.12 -> {192, 168, 1, 12})
+            	table.insert(numGroups, tonumber(part))
+        	end
+			table.remove(numGroups,4) -- removes the 0 on the subnet
+			local subnet = table.concat(numGroups,".")
+			if checkKey(interfaces,arg1) then
+				dhcpSides[arg1] = { currentHost = 1, subnet = subnet.."."}
+			end
+			--loop through interfaces making sure arg1 exists and then adding it to DHCP sides
+		elseif cmd=="exit" then
+			print("Returning to Router mode")
+			return
+		else
+			print("Unrecognized command")
+		end
+	end
+end
 
 local function DLRCLI()
     local function printHelp()
@@ -894,7 +970,7 @@ local function NATCLI()
         enable
 		      disable
 		      side [left,right,etc] [in,out]
-        show [status,in,out]
+        show
 		      exit
 
         For NAT to function set ALL sides
@@ -922,11 +998,16 @@ local function NATCLI()
 				local ok
 				for side in pairs(interfaces) do -- Add the side to the inside ports group
 					if side == arg1 then
-						table.insert(natInsideSides,arg1)
-                        print("Added side "..side.." to inside group")
-                        ok = true
-                        saveRouterServices()
-                        break
+						ok = true
+                        if not checkValue(natInsideSides,side) then -- Make sure that the side isn't already apart of inside ports group
+						    table.insert(natInsideSides,arg1)
+                            print("Added side "..side.." to inside group")
+                            saveRouterServices()
+                            break
+						else
+							print(side.." is already an inside port! Can't add twice!")
+							break
+                        end
 					end
 				end
 				if not ok then -- If the side isn't an interface then error
@@ -942,59 +1023,41 @@ local function NATCLI()
 				local ok
 				for side in pairs(interfaces) do -- Add the side to the outside ports group
 					if side == arg1 then
-						table.insert(natOutsideSides,arg1)
-                        print("Added side "..side.." to outside group")
-                        ok = true
-                        saveRouterServices()
-                        break
+						ok = true
+                        if not checkValue(natOutsideSides,side) then -- Make sure that the side isn't already apart of outside ports group
+						    table.insert(natOutsideSides,side)
+                            print("Added side "..side.." to outside group")
+                            saveRouterServices()
+                            break
+						else
+							print(side.." is already an outside port! Can't add twice!")
+							break
+                        end
 					end
 				end
 				if not ok then -- If the side isn't an interface then error
 					print("Side not found, try again")
-                else
-                    print("Usage: side [side] [in/out] example: side left in")
-				end
+                end
+            else
+                print("Usage: side [side] [in/out] example: side left in")
 			end
         elseif cmd=="show" then
-            if arg1 == "status" then
-                if NAT then
-                    print("NAT is enabled")
-                else
-                    print("NAT is disabled")
-                end
-            elseif arg1 == "in" then
-                for i,side in pairs(natInsideSides) do
-					print("NAT in side "..i..": "..side)
-				end
-				if not natInsideSides[1] then
-					print("No Inside Sides")
-				end
-            elseif arg1 == "out" then
-                for i,side in pairs(natInsideSides) do
-					print("NAT out side "..i..": "..side)
-				end
-				if not natOutsideSides[1] then
-					print("No Outside Sides")
-				end
-			elseif arg1 == "interfaces" then
-				local taken = {}
-				for i,face in pairs(natInsideSides) do
-					table.insert(taken,face)
-				end
-				for i,face in pairs(natOutsideSides) do
-					table.insert(taken,face)
-				end
-				for side in pairs(interfaces) do
-					for i, face in pairs(taken) do
-						if not side == face then
-							print("Untaken side: "..side)
-							break
-						end
-					end
-				end
-				if not taken[1] then
-					print("No sides are NAT in or out sides")
-				end
+            if NAT then
+                print("NAT is enabled")
+            else
+                print("NAT is disabled")
+            end
+            for i,side in pairs(natInsideSides) do
+                print("NAT in side "..i..": "..side)
+            end
+            if not natInsideSides[1] then
+                print("No Inside Sides")
+            end
+            for i,side in pairs(natOutsideSides) do
+                print("NAT out side "..i..": "..side)
+            end
+            if not natOutsideSides[1] then
+                print("No Outside Sides")
             end
 		elseif cmd=="exit" then
             print("Returning to Router mode")
@@ -1006,7 +1069,7 @@ local function NATCLI()
 end
 
 local function cli()
-    print(motd)
+
     local function printHelp()
         print([[Router Commands:
         show [routes,hosts,channels]
@@ -1117,6 +1180,8 @@ local function cli()
     end
     local function passwordEntry()
         while not terminated do
+            print("\n")
+            print(motd)
             io.write("Enter router CLI password: ")
             local input = read("*")
             if input ~= CLI_PASSWORD then

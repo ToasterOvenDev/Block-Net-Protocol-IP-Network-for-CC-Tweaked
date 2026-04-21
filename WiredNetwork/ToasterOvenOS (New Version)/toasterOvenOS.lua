@@ -1,6 +1,6 @@
 -- toasterOvenOS.lua
 
-package.path = package.path .. ";./Dependencies/?.lua"
+package.path = package.path .. ";./.Dependencies/?.lua"
 package.path = package.path .. ";../?.lua"
 
 local basalt = require("basalt")
@@ -89,8 +89,10 @@ local sub = { -- Desc: Subframes of clientFrame aka. Tabs on the desktop
     colors.lightBlue):setVisible(false),
 }
 
+local aniFrame
+
 local function buildPassFrame(landingFrame)
-    passFrame = main:addFrame():setBackground(colors.cyan):setVisible(true):setSize(51, 19)
+    local passFrame = main:addFrame():setBackground(colors.cyan):setVisible(true):setSize(51, 19)
     local userLabel = passFrame:addBigFont():setText(username):setPosition(8, 3)
     local passInput = passFrame:addInput() -- Changed
         :centerHorizontal("parent")
@@ -120,6 +122,7 @@ local function buildPassFrame(landingFrame)
                     passlabel:setForeground(colors.green)
                     passlabel:setText("Correct! Opening ToasterOvenOS...")
                     passFrame:destroy()
+                    aniFrame:destroy()
                     clientFrame:setVisible(true)
                     taskbar:setVisible(true)
                     sub[landingFrame]:setVisible(true)
@@ -130,27 +133,26 @@ local function buildPassFrame(landingFrame)
             end)
 end
 -- Builds the Start Animation for the OS
-local aniFrame = main:addFrame():setBackground(colors.black):setSize("{parent.width}", "{parent.height}")
+aniFrame = main:addFrame():setBackground(colors.black):setSize("{parent.width}", "{parent.height}")
 local aniO = aniFrame:addBigFont({ text = "", x = 2, y = 4, foreground = colors.white, background = colors.black, width =
 "{parent.width}", height = 3, backgroundEnabled = false }):animate()
 aniO:fadeText("text", "Operating", 10) -- Animation for Operating
     :sequence()
     :start()
-local aniS = aniFrame:addBigFont({ text = "", x = 16, y = 4, foreground = colors.white, background = colors.black, width =
-"{parent.width}", height = 3, backgroundEnabled = false }):animate()
-aniS:scrollText("text", "System", 2.5) -- Animation for System
-    :sequence()
-    :start()
-    :onComplete(function()
-        os.sleep(0.5)
-        buildPassFrame("Desktop")
-        aniFrame:destroy()
-    end)
 local aniTO = aniFrame:addBigFont({ text = "", x = 2, y = 2, foreground = colors.white, background = colors.black, width =
-"{parent.width}", height = 3, backgroundEnabled = false }):animate()
-aniTO:fadeText("text", "Toaster Oven", 10) -- Animation for Toaster Oven
+    "{parent.width}", height = 3, backgroundEnabled = false }):animate()
+    aniTO:fadeText("text", "Toaster Oven", 10) -- Animation for Toaster Oven
     :sequence()
     :start()
+local aniS = aniFrame:addBigFont({ text = "", x = 16, y = 4, foreground = colors.white, background = colors.black, width =
+    "{parent.width}", height = 3, backgroundEnabled = false }):animate()
+    aniS:scrollText("text", "System", 2.5) -- Animation for System
+        :sequence()
+        :start()
+        :onComplete(function()
+            os.sleep(0.6)
+            buildPassFrame("Desktop")
+        end)
 
 local desktopBar = sub["Desktop"]:addFrame():setPosition(1, 1):setSize("{parent.width}", 1):setBackground(colors.blue)
 desktopBar:addButton():setPosition("{parent.width-13}", 1):setText("Logout"):setSize(6, 1):setBackground(colors.blue)

@@ -1,4 +1,0 @@
-{
-  usrn = "Isaac",
-  psw = "a",
-}
