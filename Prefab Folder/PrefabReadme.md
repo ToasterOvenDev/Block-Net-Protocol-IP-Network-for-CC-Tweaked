@@ -15,8 +15,8 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 - Tested? | ✓ |
 #### Advanced Networking
 - Routers showing off all features (DLR, NAT, RDP) | **WIP** |
-- Replacing Routers with switches to save TTL and ram usage | **WIP** |
-- Fake Planned expansions to serve as an example of advanced network planning | **WIP** |
+- Replacing Routers with switches to save TTL and ram usage | ✓ |
+- Fake Planned expansions to serve as an example of advanced network planning | ✓ |
 - Multiple DNS with a Master DNS | **WIP** |
 - Traffic Routing to Master DNS Server | **WIP** |
 - Tested? | **X** |
