@@ -78,9 +78,11 @@ local BNP_FILE = "BNP.txt"
 local HOSTS_FILE = "hosts.txt"
 local SERVER_FILE = "dns-server-bnp.txt"
 
-local myBNP
+local myBNP = "172.16.16."..os.getComputerID()
 local hosts = {}
 local DNSServerBNP
+local routerBNP
+local noBNP = true
 
 -- BNP MANAGEMENT
 
@@ -284,6 +286,30 @@ local function requestFullHosts()
     end
 end
 
+local function dhcpRequest()
+	if routerBNP then
+		sendPacket(routerBNP, { type="DHCP_REQUEST" })
+	else
+		debugPrint("[DHCP] Could not find router to request BNP")
+	end
+end
+
+local function dhcpRequestLoop()
+	if myBNP == "172.16.16."..os.getComputerID() then
+		noBNP = true
+	else
+		noBNP = false
+	end
+	while noBNP do
+		dhcpRequest()
+		debugPrint("[DHCP] Requesting BNP from router")
+		os.sleep(600)
+		if myBNP ~= "172.16.16."..os.getComputerID() then
+			noBNP = false
+		end
+	end
+end
+
 -- RECEIVE LOOP
 local function receiveLoop()
     while true do
@@ -295,6 +321,7 @@ local function receiveLoop()
             if payload.type == "HELLO_REQUEST" then -- Router Discovery 
     			if payload.private_channel and type(payload.private_channel) == "number" then
                     if routerChannel == 1 then
+						routerBNP = message.src
         				routerChannel = payload.private_channel
         				debugPrint("Learned router channel: " .. routerChannel)
                     end
@@ -348,6 +375,7 @@ local function receiveLoop()
     			end
             elseif payload.type == "PING" then --Ping handling
                 sendPacket(message.src,{ type="PING_REPLY", message="pong" })
+				debugPrint("Replied to ping from "..message.src)
             elseif payload.type == "PING_REPLY" then
                 print("Reply from "..message.src..": "..(payload.message or "pong"))
             elseif payload.type == "UPDATE_HOSTS" and message.src == DNSServerBNP then --Updates Host name translations by overriding the current hosts.txt
@@ -361,6 +389,16 @@ local function receiveLoop()
                     debugPrint("[HostSync] Host server discovered at " .. DNSServerBNP)
                     requestFullHosts()
                 end
+			elseif payload.type == "DHCP_RESP" then
+				if payload.BNP == "DENY" and message.src == routerBNP then
+					noBNP = false
+					print("Got a deny after requesting BNP please manually set BNP or set up DHCP on "..routerBNP)
+				elseif message.src == routerBNP then
+					myBNP = payload.BNP
+					print("Got a new BNP from my router "..myBNP)
+				else
+					print("Got a DHCP response and it's not from my router, please find this source and deal with the intruder "..message.src)
+				end
             else --Packet isn't handled by client.lua (other files could handle the packet though)
                 debugPrint("Unhandled packet: "..textutils.serialize(payload))
             end
@@ -423,6 +461,7 @@ local function printCommands() -- prints commands with different colors
         "list hosts",
         "sync hosts",
         "bnp",
+		"dhcp-request",
 		"dnsbnp",
         "exit",
 		"clear or clr",
@@ -465,6 +504,8 @@ local function cliLoop() --Command Line Interface loop
             requestedFile = args[3]
         elseif cmd == "bnp" then
             print("Current BNP: "..tostring(myBNP))
+		elseif cmd == "dhcp-request" then
+			dhcpRequest()
 		elseif cmd == "dnsbnp" then
 			if DNSServerBNP then
 				print("DNS Server: "..DNSServerBNP)
@@ -516,4 +557,4 @@ end
 ensureStartup()
 
 if not DNSServerBNP then discoverHostServer() else requestFullHosts() end -- Makes sure that it's hosts.txt is updated fully on boot
-parallel.waitForAny(receiveLoop, cliLoop) --runs CLI and the listener for packets at once
+parallel.waitForAny(receiveLoop, cliLoop, dhcpRequestLoop) --runs CLI and the listener for packets at once

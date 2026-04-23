@@ -232,11 +232,30 @@ local function clearLastSeen()
 	last_hello = {}
 end
 
+if not fs.exists("switch.traffic") then
+    local f = fs.open("switch.traffic","w")
+    f.write("")
+    f.close()
+else
+    fs.delete("switch.traffic")
+    local f = fs.open("switch.traffic","w")
+    f.write("")
+    f.close()
+end
+
+local function logTraffic(msg)
+	local time = os.date("%H:%M:%S")
+	local f = fs.open("switch.traffic","a")
+	f.writeLine("[DEBUG "..time.."] " .. textutils.serialize(msg))
+	f.close()
+end
+
 -- === Main Loop ===
 local function Listener()
         while true do
             local _, side, _, _, message = os.pullEvent("modem_message")
             if type(message) == "table" then
+				logTraffic(message)
                 if message.payload.type == "S_H" then
                     handleSwitchHello(side, message)
                 elseif message.dst and message.src then

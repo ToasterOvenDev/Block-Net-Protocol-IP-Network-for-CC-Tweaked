@@ -115,7 +115,6 @@ local NAT = false -- If NAT is enabled
 local natTable = {} -- Table holding the nat translations made
 local natInsideSides = {} -- "left","right","top","bottom","front","back"
 local natOutsideSides = {} -- "left","right","top","bottom","front","back"
-local NATseq = 0
 
 -- DLR Configs
 
@@ -227,6 +226,8 @@ local function saveRouterServices()
         denyList = denyList,
         CLI_PASSWORD = CLI_PASSWORD,
         motd = motd,
+		DHCP = DHCP,
+		dhcpSides = dhcpSides,
     }
 
     local f = fs.open("services.txt","w")
@@ -254,6 +255,8 @@ local function loadRouterServices()
         denyList = {}
         CLI_PASSWORD = "Admin"
         motd = "Good Morning! :)"
+		DHCP = false
+		dhcpSides = {}
     else
         RDP = services.RDP
         RDPfull = services.RDPfull
@@ -270,6 +273,8 @@ local function loadRouterServices()
         denyList = services.denyList
         CLI_PASSWORD = services.CLI_PASSWORD -- Decrypt password before using it
         motd = services.motd
+		DHCP = services.DHCP
+		dhcpSides = services.dhcpSides
     end
 
 end
@@ -473,6 +478,21 @@ local function forwardPacket(packet, incomingSide)
                 saveRoutingTable()
 			end
 			return
+		elseif payload.type == "DHCP_REQUEST" then
+			if DHCP then
+				-- Look at incomingSide see if it has any DHCP info and then send a BNP to the device if it does
+				if dhcpSides[incomingSide] then
+					local currentHost = dhcpSides[incomingSide].currentHost
+					local subnet = dhcpSides[incomingSide].subnet
+					local hostBNP = subnet..currentHost
+					local reply = { uid = makeUID(), src = routerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "DHCP_RESP", BNP=hostBNP } }
+            		interfaces[incomingSide].transmit(dstCh,PRIVATE_CHANNEL,reply)
+				end
+			else
+				-- send a packet to tell the device to stop looking for DHCP; The device will start looking again after it has been reset
+				local reply = { uid = makeUID(), src = routerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "DHCP_RESP", BNP="DENY" } }
+            	interfaces[incomingSide].transmit(dstCh,PRIVATE_CHANNEL,reply)
+			end
     	elseif payload.type == "PING" then
         	if packet.dst == routerBNP then
            		local reply = { uid = makeUID(), src = routerBNP, dst = packet.src, ttl = DEFAULT_TTL, payload = { type = "PING_REPLY",message = "pong" } }
@@ -715,23 +735,31 @@ local function DHCPCLI()
 		io.write("(DHCP)> ")
 		local line = read():lower()
 		if not line then break end
-		local cmd,arg1,arg2,arg3,arg4 = line:match("^(%S+)%s*(%S*)%s*(%S*)%s*(%S*)$")
+		local cmd,arg1,arg2 = line:match("^(%S+)%s*(%S*)%s*(%S*)%s*(%S*)$")
 		if cmd=="help" then printHelp()
 		elseif cmd=="enable" then DHCP = true print("Enabled DHCP") saveRouterServices()
 		elseif cmd=="disable" then DHCP = false print("Disabled DHCP") saveRouterServices()
 		elseif cmd=="show" then
-			--will show subnet and currentHost of each DHCP enabled side
+			if DHCP then
+				print("DHCP packet listening is enabled")
+			end
+			if next(dhcpSides) then
+				for key, value in ipairs(dhcpSides) do
+					print("Side: "..key.." Subnet: "..value.subnet.." Current Host: "..value.currentHost)
+				end
+			else
+				print("No DHCP enabled sides")
+			end
 		elseif cmd=="add" then
         	local numGroups = {}
-        	for part in string.gmatch(arg2, "[^.]+") do -- break up str into groups seperated by the .'s (192.168.1.12 -> {192, 168, 1, 12})
+        	for part in string.gmatch(arg2, "[^.]+") do -- break up str into groups seperated by the .'s (192.168.1.0 -> {192, 168, 1, 0})
             	table.insert(numGroups, tonumber(part))
         	end
-			table.remove(numGroups,4) -- removes the 0 on the subnet
+			table.remove(numGroups,4) -- {192, 168, 1, 0} -> {192, 168, 1}
 			local subnet = table.concat(numGroups,".")
 			if checkKey(interfaces,arg1) then
 				dhcpSides[arg1] = { currentHost = 1, subnet = subnet.."."}
 			end
-			--loop through interfaces making sure arg1 exists and then adding it to DHCP sides
 		elseif cmd=="exit" then
 			print("Returning to Router mode")
 			return
@@ -1080,7 +1108,7 @@ local function cli()
         del traffic-route [type]
         set default-route [side]
         sides
-        [NAT, RDP, DLR]
+        [NAT, RDP, DLR, DHCP]
         debug [true,false]
         change-pass [newPassword]
         exit
@@ -1157,6 +1185,8 @@ local function cli()
                 RDPCLI()
             elseif cmd == "dlr" then
                 DLRCLI()
+			elseif cmd == "dhcp" then
+				DHCPCLI()
             elseif cmd == "debug" then
                 if arg1 == "true" then
                     print("Debug enabled")

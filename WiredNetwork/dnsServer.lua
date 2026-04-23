@@ -468,7 +468,13 @@ local function cliLoop()
             end
         elseif cmd == "addhost" then
             -- parse: addhost name BNP [flags...]
-            local name, BNP, flagsStr = args[2],args[3],args[4]
+            local name, BNP = args[2],args[3]
+			local flagsStr = ""
+			for index, flag in ipairs(args) do
+				if index > 3 then
+					flagsStr = flagsStr.." "..flag
+				end
+			end
             if not name or not BNP then print("Usage: addhost <name> <BNP> [flags...]")
             else
                 local flags = {}
