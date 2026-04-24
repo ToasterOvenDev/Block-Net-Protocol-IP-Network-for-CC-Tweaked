@@ -5,7 +5,7 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 # Current progress
 
 ### Checklist
-15/35 (Can and probably will expand)
+17/35 (Can and probably will expand)
 ***
 #### Basic Networking
 - Basic Network Plan to serve as an example of basic network planning | ✓ |
@@ -33,7 +33,7 @@ This folder is still *very* WIP, promised descriptions and functionality may not
 - Tested? | **X** |
 #### Assosiated Descriptions/Tutorials
 - Basic Networking | 4/4 |
-- Advanced Networking | 1/3 |
+- Advanced Networking | 3/3 |
 - Bank Networking | 0/4 |
 - GUI Clients | 0/3 |
 - Done? | **X** |
