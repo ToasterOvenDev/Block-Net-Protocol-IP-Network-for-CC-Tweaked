@@ -341,7 +341,7 @@ local function buildATM(accountInfo)
 	local function deposit()
 		local function sendRedstoneSignalToOtherChest() -- Literally just activates a redstone signal to send the package on the other side of the other chest
 			redstone.setOutput(chests[other], true)
-			os.sleep(2)
+			os.sleep(5)
 			redstone.setOutput(chests[other], false)
 		end
 		popupOpen = true
@@ -453,7 +453,7 @@ local function buildATM(accountInfo)
 
 	LoginFrame:destroy()
 	ATMframe:addLabel():setText("Username: "..username):setPosition(9,4):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	balanceLabel = ATMframe:addLabel():setText("Balance: "..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
+	balanceLabel = ATMframe:addLabel():setText("Balance: $"..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
 	transactionList = ATMframe:addList()
 		:setEmptyText("No Transactions on account")
 		:setPosition(9,6)

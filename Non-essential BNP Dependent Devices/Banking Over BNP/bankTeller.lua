@@ -127,18 +127,25 @@ local function lookIn(ch)
             content[iname] = {count = item.count, slot = slot } -- { ["coin_copper"] = { count = 64, slot = 1 }, ["coin_diamond"] = {count = 3, slot = 2 } }
         end
     end
-	print(textutils.serialize(content))
+	print("Items: "..textutils.serialize(content))
 end
 
 chestsFind()
 lookIn(chests[bank])
 
 local function resolveBankInv(name)
+	local bankIndex
+	local otherIndex
 	for i,inv in pairs(chests) do
 		if name == inv then
-			return i
+			bankIndex = i
+		else
+			otherIndex = i
 		end
 	end
+	other = otherIndex
+	bank = bankIndex
+	return bankIndex
 end
 
 local configFile = "ATM.conf"
@@ -190,9 +197,9 @@ end
 
 local function sendChest(schest,dchest)
 	debugPrint("SendChest Function")
-	debugPrint(textutils.serialize(peripheral.getMethods(schest)))
-	debugPrint(schest)
-	debugPrint(dchest)
+	debugPrint(textutils.serialize(chests))
+	debugPrint("source: "..schest)
+	debugPrint("dest: "..dchest)
 	for slot in pairs(waitForList(waitForPeripheral(schest, 5), schest)) do
 		waitForPeripheral(schest, 5).pushItems(dchest, slot)
 	end
@@ -218,9 +225,9 @@ local function ensureStartup()
         startupContent = f.readAll()
         f.close()
     end
-    if not startupContent:match("shell%.run%(\'ATM.lua\'%)") then
+    if not startupContent:match("shell%.run%(\'bankTeller.lua\'%)") then
         local f = fs.open("startup","a")
-        f.writeLine("shell.run('ATM.lua')")
+        f.writeLine("shell.run('bankTeller.lua')")
         f.close()
     end
 end
@@ -266,8 +273,8 @@ end
 local function fillLoginFrame()
 	LoginFrame = main:addFrame():setBackground(colors.green):setSize(51,19)
 	LoginFrame:addBigFont()
-		:setText("ATM")
-		:setPosition(22,3)
+		:setText("BANK")
+		:setPosition(21,3)
 		:setBackground(colors.green)
 	local userInput = LoginFrame:addInput()
 		:centerHorizontal("parent")
@@ -339,7 +346,7 @@ local function buildATM(accountInfo)
 	local function deposit()
 		local function sendRedstoneSignalToOtherChest() -- Literally just activates a redstone signal to send the package on the other side of the other chest
 			redstone.setOutput(chests[other], true)
-			os.sleep(2)
+			os.sleep(5)
 			redstone.setOutput(chests[other], false)
 		end
 		popupOpen = true
@@ -398,7 +405,7 @@ local function buildATM(accountInfo)
 							errorPopup("You can't withdrawl more than you have dummy")
 						else
 							label:setText("Waiting for withdrawl amount to arrive from Bank, please do NOT leave without your payment")
-							sendPacket({ type="BALANCE_UPDATE", withdrawl = numAmount, user = username, pass = accountInfo.pass })
+							sendPacket({ type="BALANCE_UPDATE", withdrawl = numAmount, user = username, pass = accountInfo.pass, bankTeller = true })
 							os.queueEvent("Withdrawl_start", numAmount)
 							amount:destroy()
 							submitted = true
@@ -448,53 +455,57 @@ local function buildATM(accountInfo)
 			end
 		end)
 	end
-
     local function card()
         popupOpen = true
         popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
         cardLabel = popup:addLabel():setText("Please enter a pin for the card"):setPosition(2,1):setSize(28,4):setAutoSize(false)
-        local input = popup:addInput():setPlaceholder("Pin number..."):setPosition(2,6)
+        local input = popup:addInput():setPlaceholder("Pin number..."):setPosition(2,6):setSize(13,1)
         popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
-        popup:addButton():setText("Request Card Number"):setPosition(2,10):setSize(19,1):onClick(function()
+        local reqButton = popup:addButton():setText("Request Card Number"):setPosition(2,10):setSize(19,1):onClick(function()
             cardLabel:setText("Requesting a card number from bank server...")
             local pin = input:getText()
-            sendPacket({type="REGISTER_PIN", register = true, pin=pin})
+            sendPacket({type="REGISTER_PIN", register = true, pinNum=pin, pass = accountInfo.pass, user=username})
         end)
-        popup:addButton():setText("Change pin"):setPosition(2,11):setSize(10,1):onClick(function()
+        local changeButton = popup:addButton():setText("Change pin"):setPosition(2,11):setSize(10,1):onClick(function()
             cardLabel:setText("Requesting pin change...")
             local pin = input:getText()
-            sendPacket({type="REGISTER_PIN", change = true, pin=pin})
+            sendPacket({type="REGISTER_PIN", change = true, pinNum=pin, pass = accountInfo.pass, user=username})
         end)
+		if accountInfo.cardNum then
+			cardLabel:setText("Your card number is "..accountInfo.cardNum.." and your current pin is "..accountInfo.pin)
+			reqButton:destroy()
+			changeButton:setPosition(2,10)
+		end
     end
 
 	LoginFrame:destroy()
 	ATMframe:addLabel():setText("Username: "..username):setPosition(9,4):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	balanceLabel = ATMframe:addLabel():setText("Balance: "..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	ATMframe:addButton():setText("Deposit"):setBackground(colors.green):setPosition(40,6):setSize(7,1):onClick(function()
+	balanceLabel = ATMframe:addLabel():setText("Balance: $"..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
+	ATMframe:addButton():setText("Deposit"):setBackground(colors.green):setPosition(9,6):setSize(7,1):onClick(function()
 			if popupOpen then -- Destroy any opened popups before opening
 				popup:destroy()
 			end
 			deposit()
 		end) -- Deposit Button
-	ATMframe:addButton():setText("Withdrawl"):setBackground(colors.green):setPosition(40,8):setSize(9,1):onClick(function()
+	ATMframe:addButton():setText("Withdrawl"):setBackground(colors.green):setPosition(9,8):setSize(9,1):onClick(function()
 			if popupOpen then -- Destroy any opened popups before opening
 				popup:destroy()
 			end
 			withdrawl()
 		end) -- Withdrawl Button
-	ATMframe:addButton():setText("Wire"):setBackground(colors.green):setPosition(40,10):setSize(4,1):onClick(function()
+	ATMframe:addButton():setText("Wire"):setBackground(colors.green):setPosition(9,10):setSize(4,1):onClick(function()
 			if popupOpen then -- Destroy any opened popups before opening
 				popup:destroy()
 			end
 			wire()
 		end) -- Wire Button
-    ATMframe:addButton():setText("Card"):setBackground(colors.green):setPosition(40,12):setSize(4,1):onClick(function()
+    ATMframe:addButton():setText("Card"):setBackground(colors.green):setPosition(9,12):setSize(4,1):onClick(function()
             if popupOpen then -- Destroy any opened popups before opening
                 popup:destroy()
             end
             card()
     end) -- Card Button
-	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(40,14):setSize(5,1):onClick(function()
+	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(9,14):setSize(5,1):onClick(function()
 			ATMframe:destroy()
 			fillLoginFrame()
 			loggedIn = false
@@ -516,7 +527,7 @@ local function withdrawlLoop()
 		if popupOpen then
 			popup:destroy()
 		end
-		errorPopup("Check Inventory below, Withdrawl has arrived")
+		errorPopup("Check Inventory on left, Withdrawl has arrived")
 	end
 end
 
@@ -551,7 +562,6 @@ local function packetHandling(packet)
 			errorPopup("No account with current username")
 		end
 	elseif payload.type == "BALANCE_UPDATE_ACCT_RESP" and loggedIn then
-		transactions = payload.accountInfo.transactions
 		balance = payload.accountInfo.balance
 		balanceLabel:setText("Balance: "..balance)
 		debugPrint("Tried to replace transactions and balance")

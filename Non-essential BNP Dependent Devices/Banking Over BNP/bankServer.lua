@@ -437,16 +437,21 @@ local function receiveLoopBank(packet,side)
 					return
 				end
 			elseif payload.type == "REGISTER_PIN" then
-				if payload.pass ~= username.pass then return end
+				if payload.pass ~= username.pass then debugPrint("[CARD] Password not correct!") return end
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
-				if payload.register then
-					local cardNum = tostring(serverConfigs.cardsRegistered+1200)
-					username.cardNum = cardNum
-					username.pin = payload.pin
+				debugPrint("[CARD] Either registering or changin a card!")
+				if username.cardNum then
+					sendBankNetwork(packet.src, {type="ERROR", message = "Already have a card number try changing the pin instead!"})
+				elseif payload.register then
+					debugPrint("[CARD] Trying to register a card")
+					local cardNum = tostring(1200+serverConfigs.cardsRegistered+math.random(8799))
+					serverConfigs.usernames[payload.user].cardNum = cardNum
+					serverConfigs.usernames[payload.user].pin = payload.pinNum
 					sendBankNetwork(packet.src, {type="PIN_RESP", cardNum = cardNum} )
 					debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
-					username.pin = payload.pin
+					debugPrint("[CARD] Trying to change a pin")
+					serverConfigs.usernames[payload.user].pin = payload.pinNum
 					sendBankNetwork(packet.src, {type="PIN_RESP", changed = true} )
 					debugPrint("Card changed for "..payload.user)
 				end
@@ -608,12 +613,12 @@ local function receiveLoopPublic(packet,side)
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
 				if payload.register then
 					local cardNum = tostring(serverConfigs.cardsRegistered+1200)
-					username.cardNum = cardNum
-					username.pin = payload.pin
+					serverConfigs.usernames[payload.user].cardNum = cardNum
+					serverConfigs.usernames[payload.user].pin = payload.pinNum
 					sendPacket(packet.src, {type="PIN_RESP", cardNum = cardNum} )
                     debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
-					username.pin = payload.pin
+					serverConfigs.usernames[payload.user].pin = payload.pinNum
 					sendPacket(packet.src, {type="PIN_RESP", changed = true} )
                     debugPrint("Card changed for "..payload.user)
 				end

@@ -1142,11 +1142,13 @@ local function cli()
                         print("Default Route -> " .. defaultRoute)
                     end
                 elseif arg1 == "hosts" then
-                    for h, s in pairs(hosts) do print(h .. " -> " .. s) end
+                    for h, s in pairs(hosts) do print(h.." -> "..s) end
                 elseif arg1 == "channels" then
-                    for BNP, ch in pairs(knownChannels) do print(BNP .. " -> " .. ch) end
+                    for BNP, ch in pairs(knownChannels) do print(BNP.." -> "..ch) end
+				elseif arg1 == "traffic-routes" then
+					for t,s in pairs(trafficRoutingTable) do print(t.." -> "..s) end
                 else
-                    print("Usage: show routes | show host | show channels")
+                    print("Usage: show routes | show host | show channels | show traffic-routes")
                 end
             elseif cmd == "bnp" and arg1 == "set" and arg2 ~= "" then
                 routerBNP = arg2
