@@ -13,6 +13,7 @@ end
 
 local version = "2.0"
 local PRIVATE_CHANNEL = os.getComputerID()
+local sides = {"left","right","top","bottom","front","back"}
 local ROUTE_FILE = "routing_table.txt"
 local interfaces = {}
 local routing_table = {}
@@ -24,8 +25,24 @@ local function makeUID()
     seq = seq + 1
     return tostring(seq) .. "-" .. tostring(os.getComputerID())
 end
+
+if fs.exists("switch.log") then
+    local f = fs.open("switch.log","w")
+    f.write("")
+    f.close()
+else
+    fs.delete("switch.log")
+    local f = fs.open("switch.log","w")
+    f.write("")
+    f.close()
+end
+
 local function log(msg)
     print("[SW:" .. PRIVATE_CHANNEL.. "] " .. msg)
+    local f = fs.open("switch.log","a")
+    local time = os.date("%H:%M:%S")
+	f.writeLine("["..time.."] " .. msg)
+	f.close()
 end
 
 local function saveRoutingTable()
@@ -55,7 +72,7 @@ end
 
 -- Modem Management 
 local function openInterfaces()
-    for _, side in ipairs(rs.getSides()) do
+    for _, side in ipairs(sides) do
         if peripheral.getType(side) == "modem" then
             local m = peripheral.wrap(side)
             if m then
@@ -88,6 +105,7 @@ local function forwardPacket(side, packet)
     local entry = routing_table[dst]
     if entry and interfaces[entry.side] then
         interfaces[entry.side].transmit(entry.channel, PRIVATE_CHANNEL, packet)
+        log("Forawrded packet from "..src.."to "..dst)
     else
         -- Default route fallback
         local def = routing_table["default"]
@@ -174,40 +192,30 @@ local function handleSwitchHello(side, packet)
     end
 end
 
--- === Commands ===
-local function showRoutingTable()
-    log("Routing Table:")
-    for BNP, data in pairs(routing_table) do
-        if type(data) == "table" then
-            print(("  %s -> side=%s ch=%s"):format(BNP, tostring(data.side), tostring(data.channel)))
-        else
-            print(("  %s -> [INVALID ENTRY: %s]"):format(BNP, tostring(data)))
-        end
-    end
-end
-
-local function clearRoutingTable()
-    routing_table = {}
-	last_hello = {}
-    saveRoutingTable()
-    log("Routing table cleared.")
-end
-
 local function CLI()
     while true do
         io.write("(Switch)> ")
         local line = io.read()
         if not line then break end
-
         local args = {}
         for word in line:gmatch("%S+") do table.insert(args, word) end
         local cmd = args[1]
         if cmd == "discover" then
             sendSwitchHello()
         elseif cmd == "show" then
-            showRoutingTable()
+            log("Routing Table:")
+            for BNP, data in pairs(routing_table) do
+                if type(data) == "table" then
+                    print(("  %s -> side=%s ch=%s"):format(BNP, tostring(data.side), tostring(data.channel)))
+                else
+                    print(("  %s -> [INVALID ENTRY: %s]"):format(BNP, tostring(data)))
+                end
+            end
         elseif cmd == "clear" then
-            clearRoutingTable()
+            routing_table = {}
+	        last_hello = {}
+            saveRoutingTable()
+            log("Routing table cleared.")
         elseif cmd == "default" and args[2] == "route" and args[3] then
             local side = args[3]
             local channel
@@ -223,13 +231,17 @@ local function CLI()
                 print("Invalid side: " .. tostring(side))
             end
         else
-            log("Unknown command: " .. cmd)
+            log("Switch ready. Type 'discover' to rescan and 'default route [side]' to set default route. Routing table commands 'show' table and 'clear' table ")
         end
     end
 end
 
 local function clearLastSeen()
-	last_hello = {}
+    sendSwitchHello()
+    while true do
+        last_hello = {}
+        os.sleep(600)
+    end
 end
 
 if not fs.exists("switch.traffic") then
@@ -246,7 +258,7 @@ end
 local function logTraffic(msg)
 	local time = os.date("%H:%M:%S")
 	local f = fs.open("switch.traffic","a")
-	f.writeLine("[DEBUG "..time.."] " .. textutils.serialize(msg))
+	f.writeLine("["..time.."] " .. textutils.serialize(msg))
 	f.close()
 end
 
@@ -284,9 +296,7 @@ ensureStartup()
 
 -- === Startup ===
 log("Initializing switch version " .. version)
-clearLastSeen()
 openInterfaces()
 loadRoutingTable()
-sendSwitchHello()
 log("Switch ready. Type 'discover' to rescan and 'default route [side]' to set default route. Routing table commands 'show' table and 'clear' table ")
-parallel.waitForAny(Listener,CLI)
+parallel.waitForAny(Listener,CLI,clearLastSeen)
