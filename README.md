@@ -18,8 +18,9 @@ Block-Net Protocol or BNP is a protocol made for CC: Tweaked that loosely follow
 
 I am a computer science major switching from IT and I thought this would be a fun little project.
 
-Don't expect for me to respond to bug reports or to have any urgency to fixing them if I even receive a report
-use this in any server or modpack you want.
+Don't expect for me to respond to bug reports or to have any urgency to fixing them if I even receive a report.
+
+Use this in any server or modpack you want.
 
 ### Resources
 
