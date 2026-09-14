@@ -14,6 +14,13 @@ Block-Net Protocol or BNP is a protocol made for CC: Tweaked that loosely follow
 ### To get ToasterOvenOS use this command:
 "wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/OSInstaller.lua oSInstaller.lua"
 
+### Notice
+The Stable version is entirely usable, but is extremely primitive, if you're willing to run into a bunch of issues you can try the unstable version of the system! 
+
+It has almost double the features and some periphery systems that build off of the original BNP system, such as an entire Bank system that works with Create. With some work, the Banking system could be repurposed into a vanilla compatible system.
+
+I plan to add much more to work with the system and once I get to a good spot and clean up the codebase it will be pushed to the Stable version. In case anyone wants to use the older more primitive version I will clone the Branch before pushing.
+
 ### About Me
 
 I am a computer science major switching from IT and I thought this would be a fun little project.
