@@ -29,7 +29,7 @@ Use this in any server or modpack you want.
 The wiki explains how to use the entire system including set-up and features of each device
 [Wiki](https://github.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/wiki#welcome-to-the-Block-Net-Protocol-Wiki)
 
-Block-Net Protocol was made on CC:Tweaked version 1.116.2 but should work on almost any version of Computer Craft that runs Basalt or has access to syntax used in CLI versions
+Block-Net Protocol was made on CC:Tweaked version 1.120.2 but should work on almost any version of Computer Craft that runs Basalt or is at least 1.113 or above in CC:Tweaked
 
 For more information on CC: Tweaked click [here](https://tweaked.cc) and download [here](https://modrinth.com/mod/cc-tweaked)
 
