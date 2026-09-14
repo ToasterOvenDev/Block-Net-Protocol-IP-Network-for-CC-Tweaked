@@ -716,7 +716,7 @@ local function cleanupSeenUIDs()
 	end
 end
 
--- CLIs
+--#region CLIs
 local function DHCPCLI()
 	local function printHelp()
 		print([[DHCP Commands:
@@ -1095,7 +1095,7 @@ local function NATCLI()
     	end
 	end
 end
-
+--#endregion Main CLI
 local function cli()
 
     local function printHelp()

@@ -1,6 +1,6 @@
 ---
 name: Question
-about: Confused and Wiki doesn't explain properly use this
+about: Confused and Wiki doesn't explain properly
 title: 'Question about [Feature related to question] '
 labels: documentation, help wanted
 assignees: ToasterOvenDev

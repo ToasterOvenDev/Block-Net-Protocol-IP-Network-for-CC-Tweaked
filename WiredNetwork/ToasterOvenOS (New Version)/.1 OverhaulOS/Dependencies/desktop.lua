@@ -1,0 +1,1 @@
+-- The main screen that users will interact with it will hold all the installed programs as clickable buttons that will open up the program

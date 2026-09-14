@@ -1,14 +1,12 @@
---#region Required processes for ATM
-local chests = {}
+--#region Required processes for bankApp
+local bankChest
 local interface = {}
-local content = {}
-local bank = 1 -- Setup bank index
-local other = 2 -- Setup other chest index
+local content = {} -- { ["coin_copper"] = { count = 64, slot = 1 }, ["coin_diamond"] = {count = 3, slot = 2 } }
 local values = { -- [[ replace this table with your own currency system (this is the lightman's currency system, link to mod in Readme)
     		["coin_copper"] = 0.01,
     		["coinpile_copper"] = 0.09,
     		["coinblock_copper"] = 0.36,
-    		["coin_iorn"] = 0.10,
+    		["coin_iron"] = 0.10,
     		["coinpile_iron"] = 0.90,
 			["coinblock_iron"] = 3.60,
 			["coin_gold"] = 1.00,
@@ -24,9 +22,32 @@ local values = { -- [[ replace this table with your own currency system (this is
     		["coinpile_netherite"] = 9000.00,
     		["coinblock_netherite"] = 36000.00
 		}
+local valuesNameOnly = { -- Sorted High to low and can be looped with ipairs instead of pairs
+	"coinblock_netherite",
+	"coinpile_netherite",
+	"coin_netherite",
+	"coinblock_diamond",
+	"coinpile_diamond",
+	"coin_diamond",
+	"coinblock_emerald",
+	"coinpile_emerald",
+	"coin_emerald",
+	"coinblock_gold",
+	"coinpile_gold",
+	"coin_gold",
+	"coinblock_iron",
+	"coinpile_iron",
+	"coin_iron",
+	"coinblock_copper",
+	"coinpile_copper",
+	"coin_copper"
+}
 local bankBNP = nil
-local ATMnum = os.getComputerID()
 local setupNeeded = true
+local myBNP
+local BNP_FILE = "BNP.txt"
+local PRIVATE_CHANNEL = os.getComputerID()
+local directConnetionChannel = 1
 
 -- Try to automatically find a connected modem
 local modem, modemSide
@@ -39,7 +60,7 @@ for _, side in ipairs({"left", "right", "top", "bottom", "front", "back"}) do
     end
 end
 
-local debugFile = "log.txt"
+local debugFile = "bankApp.log"
 if not fs.exists(debugFile) then
     local f = fs.open(debugFile,"w")
     f.write("")
@@ -61,16 +82,17 @@ debugPrint("[BOOT] Started logging")
 
 if not modem then
     term.setTextColor(colors.red)
-    print("No modem detected on any side. Please attach a modem and restart.")
+    error("No modem detected on any side. Please attach a modem and restart.")
     term.setTextColor(colors.white)
     return
 else
     term.setTextColor(colors.green)
-    print("Modem found on side: "..modemSide)
+    debugPrint("Modem found on side: "..modemSide)
     term.setTextColor(colors.white)
 end
 
-modem.open(1200)
+modem.open(PRIVATE_CHANNEL)
+modem.open(1)
 
 -- Wait for peripheral to be present
 local function waitForPeripheral(side, time)
@@ -93,32 +115,20 @@ local function waitForList(chest, side)
     return list
 end
 
-local function chestsFind()
-    chests = {}
-    interface = nil
+local function chestFind()
     -- Find connected chests/barrels and modem
     for _, side in ipairs(peripheral.getNames()) do
         if peripheral.hasType(side, "minecraft:chest") or peripheral.hasType(side, "minecraft:barrel") then
-            table.insert(chests, side)
-        elseif peripheral.hasType(side, "modem") then
-            interface = peripheral.wrap(side)
+            bankChest = side
         end
-    end
-    -- Validate number of connected chests
-    if #chests < 2 then
-        error("Need two chests connected!")
-        return
-    elseif #chests > 2 then
-        error("Cannot have more than two chests connected!")
-        return
     end
 end
 
 local function lookIn(ch)
     -- Wrap and load contents of bank chest
     content = {}
-    local chest = waitForPeripheral(ch, 5) -- Makes sure that the chests are still there
-    local banklist = waitForList(chest, ch) -- Makes sure that the contents have loaded still
+    local chst = waitForPeripheral(ch, 5) -- Makes sure that the chests are still there
+    local banklist = waitForList(chst, ch) -- Makes sure that the contents have loaded still
     for slot, item in pairs(banklist) do
         local iname = item.name:match(":(.+)")
         if content[iname] then
@@ -130,18 +140,10 @@ local function lookIn(ch)
 	print(textutils.serialize(content))
 end
 
-chestsFind()
-lookIn(chests[bank])
+chestFind()
+lookIn(bankChest)
 
-local function resolveBankInv(name)
-	for i,inv in pairs(chests) do
-		if name == inv then
-			return i
-		end
-	end
-end
-
-local configFile = "ATM.conf"
+local configFile = "bankApp.conf"
 
 local function loadConfigs()
 	local f = fs.open(configFile,"r")
@@ -150,12 +152,10 @@ local function loadConfigs()
 	if configs == "" or configs == nil then
 		print("Failed to load, using default variables")
 		bankBNP = nil
-		bank = 1
 		setupNeeded = true
 	else
 		print("Loaded correctly")
 		bankBNP = configs.bankBNP
-		bank = resolveBankInv(configs.bank)
 		setupNeeded = configs.setupNeeded
 	end
 end
@@ -168,12 +168,11 @@ end
 
 local function saveConfigs()
 	local f = fs.open(configFile,"w")
-    local configs = textutils.serialize({ bankBNP = bankBNP, bank = chests[bank], setupNeeded = setupNeeded --[[ Values should be hardcoded ]]})
+    local configs = textutils.serialize({ bankBNP = bankBNP, setupNeeded = setupNeeded --[[ Values should be hardcoded ]]})
 	f.writeLine(configs)
     f.close()
 end
 
-local bal = 0
 -- Calculate total value of chest contents
 local function addUp(chest)
     lookIn(chest)
@@ -184,18 +183,7 @@ local function addUp(chest)
         local itemValue = values[iname] or 0
         total = total + (amount * itemValue)
     end
-    bal = total
     return total
-end
-
-local function sendChest(schest,dchest)
-	debugPrint("SendChest Function")
-	debugPrint(textutils.serialize(peripheral.getMethods(schest)))
-	debugPrint(schest)
-	debugPrint(dchest)
-	for slot in pairs(waitForList(waitForPeripheral(schest, 5), schest)) do
-		waitForPeripheral(schest, 5).pushItems(dchest, slot)
-	end
 end
 
 local seq = 0
@@ -205,9 +193,9 @@ local function makeUID()
 end
 
 local function sendPacket(payload)
-	debugPrint("[SENDPACKET] Payload being sent: "..textutils.serialize(payload))
-	local packet = { uid=makeUID(), src=ATMnum, dst=bankBNP, ttl=64, payload=payload }
-	modem.transmit(1200, 1200, packet)
+	local packet = { uid=makeUID(), src=myBNP, dst=bankBNP, ttl=64, payload=payload }
+	debugPrint("[SENDPACKET] Packet being sent: "..textutils.serialize(packet))
+	modem.transmit(directConnetionChannel, PRIVATE_CHANNEL, packet)
 end
 
 -- Ensures startup on boot of Computer
@@ -218,14 +206,12 @@ local function ensureStartup()
         startupContent = f.readAll()
         f.close()
     end
-    if not startupContent:match("shell%.run%(\'ATM.lua\'%)") then
+    if not startupContent:match("shell%.run%(\'bankApp.lua\'%)") then
         local f = fs.open("startup","a")
-        f.writeLine("shell.run('ATM.lua')")
+        f.writeLine("shell.run('bankApp.lua')")
         f.close()
     end
 end
-
-ensureStartup()
 
 --#endregion
 --#region ATM GUI
@@ -266,8 +252,8 @@ end
 local function fillLoginFrame()
 	LoginFrame = main:addFrame():setBackground(colors.green):setSize(51,19)
 	LoginFrame:addBigFont()
-		:setText("ATM")
-		:setPosition(22,3)
+		:setText("BANK")
+		:setPosition(21,3)
 		:setBackground(colors.green)
 	local userInput = LoginFrame:addInput()
 		:centerHorizontal("parent")
@@ -331,6 +317,7 @@ local balanceLabel
 local transactionList
 local loggedIn = false
 local popupOpen = false
+local cardLabel
 
 local function buildATM(accountInfo)
 	transactions = accountInfo.transactions
@@ -339,14 +326,9 @@ local function buildATM(accountInfo)
 	loggedIn = true
 
 	local function deposit()
-		local function sendRedstoneSignalToOtherChest() -- Literally just activates a redstone signal to send the package on the other side of the other chest
-			redstone.setOutput(chests[other], true)
-			os.sleep(5)
-			redstone.setOutput(chests[other], false)
-		end
 		popupOpen = true
 		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
-		local label = popup:addLabel():setText("Please add deposit amount in inventory on the "..chests[bank]):setPosition(2,1):setSize(28,4):setAutoSize(false)
+		local label = popup:addLabel():setText("Please add deposit amount in inventory on the "..bankChest):setPosition(2,1):setSize(28,4):setAutoSize(false)
 		local submitted1 = false
 		local total = 0
 		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
@@ -356,36 +338,94 @@ local function buildATM(accountInfo)
 			if submitted1 then
 				if total > 0 then
 					popup:destroy()
-					sendChest(chests[bank],chests[other])
 					packet.deposit = total
 					sendPacket(packet)
 					popupOpen = false
-					basalt.schedule(sendRedstoneSignalToOtherChest)
-					debugPrint(chests[other])
+					label:setText("Please apply a redstone signal to packager")
 				else
 					errorPopup("Deposit must be at least $0.01")
 				end
 			else
 				debugPrint("AddUp")
-				total = addUp(chests[bank])
+				total = addUp(bankChest)
 				debugPrint("After AddUp")
 				label:setText("You want to deposit $"..total..", correct?")
 				button:setText("Yes"):setSize(3,1)
 				popup:addButton():setSize(2,1):setPosition(7,10):setBackground(colors.red):setText("No"):onClick(function()
-					total = addUp(chests[bank])
-					label:setText("You want to deposit $"..total..", correct? Place correct amount in "..chests[bank].." and press No again to reconfirm")
+					total = addUp(bankChest)
+					label:setText("You want to deposit $"..total..", correct? Place correct amount in "..bankChest.." and press No again to reconfirm")
 				end)
 				submitted1 = true
 			end
 		end)
 	end
 	local function withdrawl()
+		local function specificWithdrawl()
+			local total = 0
+			local currentlySelected
+			local coins = {}
+			popup:destroy()
+			popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6) -- Replace withdrawl with new popup frame
+			local label = popup:addLabel():setText("What coins do you want?"):setPosition(2,2):setSize(23,1):setAutoSize(false)
+			local totalLabel = popup:addLabel():setText("Total: "):setPosition(2,3):setSize(28,1):setAutoSize(false)
+			local stopButton = popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
+			popup:addButton():setSize(3,1):setPosition(26,8):setText("Add"):onClick(function(self)
+				stopButton:setVisible(false)
+				self:setVisible(false)
+				local addPopup = popup:addFrame():setPosition(2,4):setSize(21,7)
+				addPopup:addLabel():setText(currentlySelected.text):setPosition(2,2)
+				addPopup:addLabel():setText("Negative #'s will remove from total"):setPosition(2,4):setSize(19,2):setAutoSize(false)
+				local amountOfItem = addPopup:addInput():setPosition(2,3):setSize(19,1):setBackground(colors.white):setPlaceholder("Amount")
+				local addPStopButton = popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop")
+				addPStopButton:onClick(function() stopButton:setVisible(true) self:setVisible(true) addPopup:destroy() addPStopButton:destroy() end)
+				addPopup:addButton():setSize(3,1):setPosition(2,6):setText("Add"):setBackground(colors.green):onClick(function()
+					xpcall(function()
+						total = total + tonumber(amountOfItem:getText())*currentlySelected.value
+						table.insert(coins,{name=currentlySelected.name,amount=tonumber(amountOfItem:getText())})
+						totalLabel:setText("Total: "..tostring(total))
+					end,
+					function()
+						errorPopup("Amount must be a pure number eg. 1,2,3,-6")
+					end)
+					self:setVisible(true)
+					stopButton:setVisible(true)
+					addPopup:destroy()
+					addPStopButton:destroy()
+				end)
+			end)
+			local list = popup:addList():setPosition(2,4):setSize(21,7)
+			list:onSelect(function() currentlySelected = list:getSelectedItem() end)
+			for _,name in ipairs(valuesNameOnly) do
+				local value = values[name]
+				local displayName
+				local prefix, material = name:match("^(%a+)_(%a+)$")
+				
+    			if prefix == "coin" then
+    				displayName = material:gsub("^.", string.upper) .. " Coin"
+				elseif prefix =="coinpile" then
+					displayName = material:gsub("^.",string.upper).. " Coin Pile"
+    			elseif prefix == "coinblock" then
+        			displayName = material:gsub("^.", string.upper) .. " Coin Block"
+    			end
+				list:addItem({text=displayName,name=name,value=value})
+			end
+			popup:addButton():setSize(4,1):setPosition(26,6):setText("Send"):onClick(function()
+				if next(coins) then
+					sendPacket({type="WITHDRAWL",request=coins,user=username,pass=accountInfo.pass,address=myBNP})
+					os.queueEvent("Withdrawl_start", total)
+					label:setText("Waiting for withdrawl amount to arrive from Bank"):setSize(28,4)
+					totalLabel:destroy()
+					list:destroy()
+				end
+			end)
+		end
 		popupOpen = true
 		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
 		local submitted = false
 		local label = popup:addLabel():setText("Please enter amount to withdrawl \n\n current balance: "..balance):setPosition(2,1):setSize(28,4):setAutoSize(false)
 		local amount = popup:addInput():setPosition(2,6):setPlaceholder("Amount")
 		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
+		popup:addButton():setSize(8,1):setPosition(10,10):setText("Specific"):onClick(function() specificWithdrawl() end)
 		popup:addButton():setSize(6,1):setPosition(2,10):setText("Submit"):onClick(function()
 			if submitted then
 				popup:destroy()
@@ -399,7 +439,7 @@ local function buildATM(accountInfo)
 						elseif tonumber(balance) < numAmount then
 							errorPopup("You can't withdrawl more than you have dummy")
 						else
-							label:setText("Waiting for withdrawl amount to arrive from Bank, please do NOT leave without your payment")
+							label:setText("Waiting for withdrawl amount to arrive from Bank")
 							sendPacket({ type="BALANCE_UPDATE", withdrawl = numAmount, user = username, pass = accountInfo.pass })
 							os.queueEvent("Withdrawl_start", numAmount)
 							amount:destroy()
@@ -450,10 +490,32 @@ local function buildATM(accountInfo)
 			end
 		end)
 	end
+	local function card()
+        popupOpen = true
+        popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
+        cardLabel = popup:addLabel():setText("Please enter a pin for the card"):setPosition(2,1):setSize(28,4):setAutoSize(false)
+        local input = popup:addInput():setPlaceholder("Pin number..."):setPosition(2,6):setSize(13,1)
+        popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
+        local reqButton = popup:addButton():setText("Request Card Number"):setPosition(2,10):setSize(19,1):onClick(function()
+            cardLabel:setText("Requesting a card number from bank server...")
+            local pin = input:getText()
+            sendPacket({type="REGISTER_PIN", register = true, pinNum=pin, pass = accountInfo.pass, user=username})
+        end)
+        local changeButton = popup:addButton():setText("Change pin"):setPosition(2,11):setSize(10,1):onClick(function()
+            cardLabel:setText("Requesting pin change...")
+            local pin = input:getText()
+            sendPacket({type="REGISTER_PIN", change = true, pinNum=pin, pass = accountInfo.pass, user=username})
+        end)
+		if accountInfo.cardNum then
+			cardLabel:setText("Your card number is "..accountInfo.cardNum.." and your current pin is "..accountInfo.pin)
+			reqButton:destroy()
+			changeButton:setPosition(2,10)
+		end
+    end
 
 	LoginFrame:destroy()
 	ATMframe:addLabel():setText("Username: "..username):setPosition(9,4):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	balanceLabel = ATMframe:addLabel():setText("Balance: $"..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
+	balanceLabel = ATMframe:addLabel():setText("Balance: "..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
 	transactionList = ATMframe:addList()
 		:setEmptyText("No Transactions on account")
 		:setPosition(9,6)
@@ -482,7 +544,13 @@ local function buildATM(accountInfo)
 			end
 			wire()
 		end) -- Wire Button
-	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(40,12):setSize(5,1):onClick(function()
+	ATMframe:addButton():setText("Card"):setBackground(colors.green):setPosition(40,12):setSize(4,1):onClick(function()
+            if popupOpen then -- Destroy any opened popups before opening
+                popup:destroy()
+            end
+            card()
+    end) -- Card Button
+	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(40,14):setSize(5,1):onClick(function()
 			ATMframe:destroy()
 			fillLoginFrame()
 			loggedIn = false
@@ -490,21 +558,18 @@ local function buildATM(accountInfo)
 end
 
 local function withdrawlLoop()
-	local o = chests[other]
-	local b = chests[bank]
 	local withdrawn = 0
 	while true do
 		local _,target = os.pullEvent("Withdrawl_start")
 		debugPrint("Starting Withdrawl loop")
 		repeat
-			withdrawn = addUp(o)
+			withdrawn = addUp(bankChest)
 			os.sleep(5)
 		until withdrawn == target
-		sendChest(o,b)
 		if popupOpen then
 			popup:destroy()
 		end
-		errorPopup("Check Inventory below, Withdrawl has arrived")
+		errorPopup("Check Inventory, Withdrawl has arrived")
 	end
 end
 
@@ -515,8 +580,6 @@ local function packetHandling(packet)
 	if payload.type == "RESET" then
 		bankBNP = nil
 		os.reboot()
-	elseif payload.type == "BAL_RESP" then
-		bal = payload.balance
 	elseif payload.type == "ATM_NUM" then
 		ATMNum = payload.num
 	elseif payload.type == "VALUES_RESP" then
@@ -547,13 +610,22 @@ local function packetHandling(packet)
 		end
 		balanceLabel:setText("Balance: "..balance)
 		debugPrint("Tried to replace transactions and balance")
+	elseif payload.type == "PIN_RESP" then
+        if payload.cardNum then
+            cardLabel:setText("New card number is "..payload.cardNum)
+        elseif payload.changed then
+            cardLabel:setText("Pin number changed to"..payload.newPin)
+        end
 	end
 end
 
 local function listener()
     while true do
-        local _, _, _, _, msg = os.pullEvent("modem_message")
+        local _, _, _, replyChannel, msg = os.pullEvent("modem_message")
         if interface and type(msg)=="table" and msg.uid then
+			if directConnetionChannel == 1 then
+				directConnetionChannel = replyChannel
+			end
             packetHandling(msg)
         end
     end
@@ -562,40 +634,50 @@ end
 local function setupCLI()
 	local settingup = true
 	while settingup do
+		print("Please head to your bank to ask for a Server BNP to set up app, you may also try messaging them")
 		write("Enter Bank Server BNP: ")
 		local userin = read()
 		bankBNP = userin
-		print("Pick a inventory to be the input ")
-		for _,inv in pairs(chests) do
-			print("- "..inv)
+		if not myBNP then
+			print("You don't have a BNP on this device please put one")
+			write("Device BNP: ")
+			userin = read()
+			myBNP = userin
 		end
+		write("Do you want App to start on boot?(y/n)")
 		userin = read()
-		for i,inv in pairs(chests) do
-			if userin == inv then
-				print("Picked "..inv.." as input inventory")
-				bank = i
-			end
+		local startOnBootStr = "No"
+		if userin == "y" then
+			ensureStartup()
+			startOnBootStr = "Yes"
+			print("Ensured App starts when Computer is booted")
+		else
+			startOnBootStr = "No"
+			print("App will not open on boot")
 		end
-		print("Current settings are: \nBank BNP: "..bankBNP.."\nInput Inventory: "..chests[bank])
-		print("\nDo you want to continue with these settings? (y/n)")
+		print("Current settings are: \nBank BNP: "..bankBNP.."\nStart on Boot: "..startOnBootStr.."\nDevice BNP: "..myBNP)
+		print("\nDo you want to continue with these settings?(y/n)")
 		userin = read()
 		if userin == "y" then
-			print("Settings saved, please restart device")
+			term.setTextColor(colors.yellow)
+			print("Settings saved \n\nYou need to place a packager, and a frogport on top of the "..bankChest.." inventory.\n\nPlease name your frogport "..myBNP.." \n\nIf you do not do this you cannot withdrawl or deposit on this device\n\nPlease contact bank and ask what their frogport's adddress is, then place a sign on your packager and write \"[BankFrogportAddress] "..myBNP.."\"")
+			term.setTextColor(colors.white)
+			print("\nOnce you have finished all of this you may start the app.")
 			settingup = false
 		else
 			print("resetting process")
 			bankBNP = nil
-			bank = 1
 		end
 	end
 end
 
+--#endregion
 if setupNeeded then
 	setupCLI()
 	setupNeeded = false
 	saveConfigs()
+else
+	basalt.schedule(listener)
+	basalt.schedule(withdrawlLoop)
+	basalt.run()
 end
---#endregion
-basalt.schedule(listener)
-basalt.schedule(withdrawlLoop)
-basalt.run()

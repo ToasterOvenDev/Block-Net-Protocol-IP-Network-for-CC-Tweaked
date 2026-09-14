@@ -8,7 +8,7 @@ local values = { -- [[ replace this table with your own currency system (this is
     		["coin_copper"] = 0.01,
     		["coinpile_copper"] = 0.09,
     		["coinblock_copper"] = 0.36,
-    		["coin_iorn"] = 0.10,
+    		["coin_iron"] = 0.10,
     		["coinpile_iron"] = 0.90,
 			["coinblock_iron"] = 3.60,
 			["coin_gold"] = 1.00,
@@ -23,7 +23,27 @@ local values = { -- [[ replace this table with your own currency system (this is
     		["coin_netherite"] = 1000.00,
     		["coinpile_netherite"] = 9000.00,
     		["coinblock_netherite"] = 36000.00
-		}
+		} --]] I'm going to change this to request a values from it's bank server on setup and save it here
+local valuesNameOnly = { -- Sorted High to low and can be looped with ipairs instead of pairs
+	"coinblock_netherite",
+	"coinpile_netherite",
+	"coin_netherite",
+	"coinblock_diamond",
+	"coinpile_diamond",
+	"coin_diamond",
+	"coinblock_emerald",
+	"coinpile_emerald",
+	"coin_emerald",
+	"coinblock_gold",
+	"coinpile_gold",
+	"coin_gold",
+	"coinblock_iron",
+	"coinpile_iron",
+	"coin_iron",
+	"coinblock_copper",
+	"coinpile_copper",
+	"coin_copper"
+}
 local bankBNP = nil
 local ATMnum = os.getComputerID()
 local setupNeeded = true
@@ -117,7 +137,7 @@ end
 local function lookIn(ch)
     -- Wrap and load contents of bank chest
     content = {}
-    local chest = waitForPeripheral(ch, 5) -- Makes sure that the chests are still there
+    local chest = waitForPeripheral(ch, 5) -- Makes sure that the chest are still there
     local banklist = waitForList(chest, ch) -- Makes sure that the contents have loaded still
     for slot, item in pairs(banklist) do
         local iname = item.name:match(":(.+)")
@@ -127,25 +147,18 @@ local function lookIn(ch)
             content[iname] = {count = item.count, slot = slot } -- { ["coin_copper"] = { count = 64, slot = 1 }, ["coin_diamond"] = {count = 3, slot = 2 } }
         end
     end
-	print("Items: "..textutils.serialize(content))
+	print(textutils.serialize(content))
 end
 
 chestsFind()
 lookIn(chests[bank])
 
 local function resolveBankInv(name)
-	local bankIndex
-	local otherIndex
 	for i,inv in pairs(chests) do
 		if name == inv then
-			bankIndex = i
-		else
-			otherIndex = i
+			return i
 		end
 	end
-	other = otherIndex
-	bank = bankIndex
-	return bankIndex
 end
 
 local configFile = "ATM.conf"
@@ -180,7 +193,6 @@ local function saveConfigs()
     f.close()
 end
 
-local bal = 0
 -- Calculate total value of chest contents
 local function addUp(chest)
     lookIn(chest)
@@ -191,15 +203,15 @@ local function addUp(chest)
         local itemValue = values[iname] or 0
         total = total + (amount * itemValue)
     end
-    bal = total
+	debugPrint("Total was:"..tostring(total))
     return total
 end
 
 local function sendChest(schest,dchest)
 	debugPrint("SendChest Function")
-	debugPrint(textutils.serialize(chests))
-	debugPrint("source: "..schest)
-	debugPrint("dest: "..dchest)
+	debugPrint(textutils.serialize(peripheral.getMethods(schest)))
+	debugPrint(schest)
+	debugPrint(dchest)
 	for slot in pairs(waitForList(waitForPeripheral(schest, 5), schest)) do
 		waitForPeripheral(schest, 5).pushItems(dchest, slot)
 	end
@@ -225,9 +237,9 @@ local function ensureStartup()
         startupContent = f.readAll()
         f.close()
     end
-    if not startupContent:match("shell%.run%(\'bankTeller.lua\'%)") then
+    if not startupContent:match("shell%.run%(\'ATM.lua\'%)") then
         local f = fs.open("startup","a")
-        f.writeLine("shell.run('bankTeller.lua')")
+        f.writeLine("shell.run('ATM.lua')")
         f.close()
     end
 end
@@ -273,8 +285,8 @@ end
 local function fillLoginFrame()
 	LoginFrame = main:addFrame():setBackground(colors.green):setSize(51,19)
 	LoginFrame:addBigFont()
-		:setText("BANK")
-		:setPosition(21,3)
+		:setText("ATM")
+		:setPosition(22,3)
 		:setBackground(colors.green)
 	local userInput = LoginFrame:addInput()
 		:centerHorizontal("parent")
@@ -332,13 +344,15 @@ end
 
 fillLoginFrame()
 local popup
+local transactions
 local balance
 local balanceLabel
+local transactionList
 local loggedIn = false
 local popupOpen = false
-local cardLabel
 
 local function buildATM(accountInfo)
+	transactions = accountInfo.transactions
 	balance = tostring(accountInfo.balance)
 	ATMframe = main:addFrame():setBackground(colors.green):setSize(51,19):setVisible(true)
 	loggedIn = true
@@ -385,12 +399,73 @@ local function buildATM(accountInfo)
 		end)
 	end
 	local function withdrawl()
+		local function specificWithdrawl()
+			local total = 0
+			local currentlySelected
+			local coins = {}
+			popup:destroy()
+			popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6) -- Replace withdrawl with new popup frame
+			local label = popup:addLabel():setText("What coins do you want?"):setPosition(2,2):setSize(23,1):setAutoSize(false)
+			local totalLabel = popup:addLabel():setText("Total: "):setPosition(2,3):setSize(28,1):setAutoSize(false)
+			local stopButton = popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
+			popup:addButton():setSize(3,1):setPosition(26,8):setText("Add"):onClick(function(self)
+				stopButton:setVisible(false)
+				self:setVisible(false)
+				local addPopup = popup:addFrame():setPosition(2,4):setSize(21,7)
+				addPopup:addLabel():setText(currentlySelected.text):setPosition(2,2)
+				addPopup:addLabel():setText("Negative #'s will remove from total"):setPosition(2,4):setSize(19,2):setAutoSize(false)
+				local amountOfItem = addPopup:addInput():setPosition(2,3):setSize(19,1):setBackground(colors.white):setPlaceholder("Amount")
+				local addPStopButton = popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop")
+				addPStopButton:onClick(function() stopButton:setVisible(true) self:setVisible(true) addPopup:destroy() addPStopButton:destroy() end)
+				addPopup:addButton():setSize(3,1):setPosition(2,6):setText("Add"):setBackground(colors.green):onClick(function()
+					xpcall(function()
+						total = total + tonumber(amountOfItem:getText())*currentlySelected.value
+						table.insert(coins,{name=currentlySelected.name,amount=tonumber(amountOfItem:getText())})
+						totalLabel:setText("Total: "..tostring(total))
+					end,
+					function()
+						errorPopup("Amount must be a pure number eg. 1,2,3,-6")
+					end)
+					self:setVisible(true)
+					stopButton:setVisible(true)
+					addPopup:destroy()
+					addPStopButton:destroy()
+				end)
+			end)
+			local list = popup:addList():setPosition(2,4):setSize(21,7)
+			list:onSelect(function() currentlySelected = list:getSelectedItem() end)
+			for _,name in ipairs(valuesNameOnly) do
+				local value = values[name]
+				local displayName
+				local prefix, material = name:match("^(%a+)_(%a+)$")
+				
+    			if prefix == "coin" then
+    				displayName = material:gsub("^.", string.upper) .. " Coin"
+				elseif prefix =="coinpile" then
+					displayName = material:gsub("^.",string.upper).. " Coin Pile"
+    			elseif prefix == "coinblock" then
+        			displayName = material:gsub("^.", string.upper) .. " Coin Block"
+    			end
+				list:addItem({text=displayName,name=name,value=value})
+			end
+			popup:addButton():setSize(4,1):setPosition(26,6):setText("Send"):onClick(function()
+				if next(coins) then
+					sendPacket({type="WITHDRAWL",request=coins,user=username,pass=accountInfo.pass,address="ATM "..ATMnum})
+					os.queueEvent("Withdrawl_start", total)
+					label:setText("Waiting for withdrawl amount to arrive from Bank, please do NOT leave without your payment"):setSize(28,4)
+					totalLabel:destroy()
+					list:destroy()
+				end
+			end)
+		end
+		
 		popupOpen = true
 		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
 		local submitted = false
 		local label = popup:addLabel():setText("Please enter amount to withdrawl \n\n current balance: "..balance):setPosition(2,1):setSize(28,4):setAutoSize(false)
 		local amount = popup:addInput():setPosition(2,6):setPlaceholder("Amount")
 		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
+		popup:addButton():setSize(8,1):setPosition(10,10):setText("Specific"):onClick(function() specificWithdrawl() end)
 		popup:addButton():setSize(6,1):setPosition(2,10):setText("Submit"):onClick(function()
 			if submitted then
 				popup:destroy()
@@ -405,7 +480,7 @@ local function buildATM(accountInfo)
 							errorPopup("You can't withdrawl more than you have dummy")
 						else
 							label:setText("Waiting for withdrawl amount to arrive from Bank, please do NOT leave without your payment")
-							sendPacket({ type="BALANCE_UPDATE", withdrawl = numAmount, user = username, pass = accountInfo.pass, bankTeller = true })
+							sendPacket({ type="BALANCE_UPDATE", withdrawl = numAmount, user = username, pass = accountInfo.pass })
 							os.queueEvent("Withdrawl_start", numAmount)
 							amount:destroy()
 							submitted = true
@@ -455,57 +530,39 @@ local function buildATM(accountInfo)
 			end
 		end)
 	end
-    local function card()
-        popupOpen = true
-        popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
-        cardLabel = popup:addLabel():setText("Please enter a pin for the card"):setPosition(2,1):setSize(28,4):setAutoSize(false)
-        local input = popup:addInput():setPlaceholder("Pin number..."):setPosition(2,6):setSize(13,1)
-        popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
-        local reqButton = popup:addButton():setText("Request Card Number"):setPosition(2,10):setSize(19,1):onClick(function()
-            cardLabel:setText("Requesting a card number from bank server...")
-            local pin = input:getText()
-            sendPacket({type="REGISTER_PIN", register = true, pinNum=pin, pass = accountInfo.pass, user=username})
-        end)
-        local changeButton = popup:addButton():setText("Change pin"):setPosition(2,11):setSize(10,1):onClick(function()
-            cardLabel:setText("Requesting pin change...")
-            local pin = input:getText()
-            sendPacket({type="REGISTER_PIN", change = true, pinNum=pin, pass = accountInfo.pass, user=username})
-        end)
-		if accountInfo.cardNum then
-			cardLabel:setText("Your card number is "..accountInfo.cardNum.." and your current pin is "..accountInfo.pin)
-			reqButton:destroy()
-			changeButton:setPosition(2,10)
-		end
-    end
 
 	LoginFrame:destroy()
 	ATMframe:addLabel():setText("Username: "..username):setPosition(9,4):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	balanceLabel = ATMframe:addLabel():setText("Balance: $"..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
-	ATMframe:addButton():setText("Deposit"):setBackground(colors.green):setPosition(9,6):setSize(7,1):onClick(function()
+	balanceLabel = ATMframe:addLabel():setText("Balance: "..balance):setPosition(9,5):setSize(30,1):setBackground(colors.green):setForeground(colors.orange)
+	transactionList = ATMframe:addList()
+		:setEmptyText("No Transactions on account")
+		:setPosition(9,6)
+		:setSize(30,11)
+		:setBackground(colors.orange)
+		:setSelectedBackground(colors.orange)
+		:setSelectedForeground(colors.black)
+	for _,v in ipairs(transactions) do
+		transactionList:addItem(v)
+	end
+	ATMframe:addButton():setText("Deposit"):setBackground(colors.green):setPosition(40,6):setSize(7,1):onClick(function()
 			if popupOpen then -- Destroy any opened popups before opening
 				popup:destroy()
 			end
 			deposit()
 		end) -- Deposit Button
-	ATMframe:addButton():setText("Withdrawl"):setBackground(colors.green):setPosition(9,8):setSize(9,1):onClick(function()
+	ATMframe:addButton():setText("Withdrawl"):setBackground(colors.green):setPosition(40,8):setSize(9,1):onClick(function()
 			if popupOpen then -- Destroy any opened popups before opening
 				popup:destroy()
 			end
 			withdrawl()
 		end) -- Withdrawl Button
-	ATMframe:addButton():setText("Wire"):setBackground(colors.green):setPosition(9,10):setSize(4,1):onClick(function()
+	ATMframe:addButton():setText("Wire"):setBackground(colors.green):setPosition(40,10):setSize(4,1):onClick(function()
 			if popupOpen then -- Destroy any opened popups before opening
 				popup:destroy()
 			end
 			wire()
 		end) -- Wire Button
-    ATMframe:addButton():setText("Card"):setBackground(colors.green):setPosition(9,12):setSize(4,1):onClick(function()
-            if popupOpen then -- Destroy any opened popups before opening
-                popup:destroy()
-            end
-            card()
-    end) -- Card Button
-	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(9,14):setSize(5,1):onClick(function()
+	ATMframe:addButton():setText("Leave"):setBackground(colors.green):setPosition(40,12):setSize(5,1):onClick(function()
 			ATMframe:destroy()
 			fillLoginFrame()
 			loggedIn = false
@@ -513,10 +570,10 @@ local function buildATM(accountInfo)
 end
 
 local function withdrawlLoop()
-	local o = chests[other]
-	local b = chests[bank]
-	local withdrawn = 0
 	while true do
+		local o = chests[other]
+		local b = chests[bank]
+		local withdrawn = 0
 		local _,target = os.pullEvent("Withdrawl_start")
 		debugPrint("Starting Withdrawl loop")
 		repeat
@@ -527,7 +584,7 @@ local function withdrawlLoop()
 		if popupOpen then
 			popup:destroy()
 		end
-		errorPopup("Check Inventory on left, Withdrawl has arrived")
+		errorPopup("Check Inventory below, Withdrawl has arrived")
 	end
 end
 
@@ -562,15 +619,14 @@ local function packetHandling(packet)
 			errorPopup("No account with current username")
 		end
 	elseif payload.type == "BALANCE_UPDATE_ACCT_RESP" and loggedIn then
+		transactions = payload.accountInfo.transactions
 		balance = payload.accountInfo.balance
+		transactionList:clear()
+		for _,v in ipairs(transactions) do
+			transactionList:addItem(v)
+		end
 		balanceLabel:setText("Balance: "..balance)
 		debugPrint("Tried to replace transactions and balance")
-    elseif payload.type == "PIN_RESP" then
-        if payload.cardNum then
-            cardLabel:setText("New card number is "..payload.cardNum)
-        elseif payload.changed then
-            cardLabel:setText("Pin number changed")
-        end
 	end
 end
 

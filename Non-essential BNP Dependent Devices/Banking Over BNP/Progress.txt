@@ -1,0 +1,1 @@
+You still need to make sure that the nbt registry process for the bank server works and if it does make sure that the reading is correct on the bankTeller and remote ATM

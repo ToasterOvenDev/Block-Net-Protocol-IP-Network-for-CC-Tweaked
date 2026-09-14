@@ -1,0 +1,2 @@
+-- This file will provide some help when interacting with the shell through TOOS
+-- Things like redirecting the edit command to a file that opens edit in a window like any other application or if TOOS is not running opening it normally

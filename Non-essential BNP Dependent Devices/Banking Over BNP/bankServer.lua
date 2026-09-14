@@ -56,6 +56,7 @@ local PRIVATE_CHANNEL = os.getComputerID()
 local modems = {}
 local interfaces = {}
 local stockTicker
+local packager
 local function findModems()
     for _, side in ipairs(peripheral.getNames()) do
         if peripheral.hasType(side, "modem") then
@@ -65,8 +66,17 @@ local function findModems()
 			stockTicker = peripheral.wrap(side)
 			debugPrint("[VAULT] Found StockTicker",true)
 		end
+		if peripheral.hasType(side, "Create_Packager") then
+			packager = peripheral.wrap(side)
+			debugPrint("[VAULT] Found Packager")
+		end
     end
-	debugPrint("[VAULT] If StockTicker not connected full bank functionality is not possible")
+	if not stockTicker then
+		debugPrint("[VAULT] If StockTicker not connected full bank functionality is not possible")
+	end
+	if not packager then
+		debugPrint("[VAULT] If Packager not connected full bank functionality is not possible")
+	end
 end
 
 findModems()
@@ -97,13 +107,13 @@ local BNP_FILE = "BNP.txt"
 local myBNP
 local routerChannel = 1
 local SERVERNAME = "bankServer.lua"
-local serverConfigs = { usernames = {}, cardsRegistered = 0, publicSide = "back" }
+local serverConfigs = { usernames = {}, cardsRegistered = 0, publicSide = "back", deposits = {} }
 local configFile = "bankServer.config"
 local values = { -- [[ replace this table with your own currency system (this is the lightman's currency system, link to mod in Readme)
     		["coin_copper"] = 0.01,
     		["coinpile_copper"] = 0.09,
     		["coinblock_copper"] = 0.36,
-    		["coin_iorn"] = 0.10,
+    		["coin_iron"] = 0.10,
     		["coinpile_iron"] = 0.90,
 			["coinblock_iron"] = 3.60,
 			["coin_gold"] = 1.00,
@@ -162,11 +172,13 @@ else
 			usernames = {},
 			cardsRegistered = 0,
 			publicSide = "back",
+			deposits = {}
 		}
 	else
 		serverConfigs.usernames = config.usernames
 		serverConfigs.cardsRegistered = config.cardsRegistered
 		serverConfigs.publicSide = config.publicSide
+		serverConfigs.deposits = config.deposits
 	end
 end
 
@@ -222,7 +234,6 @@ local function withdrawl(total, address)
 		end
 	end
 	-- At this point the coins table will have what needs to be sent to the withdrawler
-	local filter = {}
 	for _,coin in ipairs(coins) do
 		if coin.amount > 0 then
 			stockTicker.requestFiltered(address,{ name = "lightmanscurrency:"..coin.name, _requestCount = coin.amount })
@@ -317,21 +328,31 @@ local function receiveLoopBank(packet,side)
 		debugPrint("Valid Packet, processing",true)
         local payload = packet.payload
 		local username
+		local userCard
 		if payload.user then
 			username = serverConfigs.usernames[payload.user]
 			debugPrint("Direct Username and Pass provided, no need to translate card number and pin")
 		elseif payload.card then
 			debugPrint("Finding card num and matching to provided card")
 			for user, info in pairs(serverConfigs.usernames) do
-				if info.cardNum == payload.card then
-					username = serverConfigs.usernames[user]
-					debugPrint("Found card")
-					break
+				if info.cards then
+					for card,cardData in pairs(info.cards) do
+						if cardData.cardNum == payload.cardNum then
+							username = serverConfigs.usernames[user]
+							payload.user = user
+							userCard = cardData
+							break
+						end
+					end
+					if username then
+						debugPrint("Found card")
+						break
+					end
 				end
 			end
 		end
 		debugPrint("Payload type is "..payload.type)
-		if payload.card and username.cardNum == payload.card and username.pin == payload.pin then
+		if payload.card == userCard.cardNBT and userCard.pin == payload.pin then
 			debugPrint("Card number and Pin are correct, translating password")
 			payload.pass = username.pass
 		end
@@ -373,20 +394,20 @@ local function receiveLoopBank(packet,side)
 				debugPrint("Got an Balance Update packet")
 				local amount
 				local transaction
-				local accepted = false
 				if payload.deposit then
-					debugPrint("Deposit accepted for "..tostring(payload.deposit).." User: "..payload.user)
-					amount = payload.deposit
-					username.balance = username.balance + amount
-					transaction = "Deposit of "..tostring(amount)
-					accepted = true
+					local originAddress = "ATM "..packet.src
+					if payload.bankTeller then
+						originAddress = "BT "..packet.src
+					end
+					debugPrint("[DEPOSIT] Inserting deposit into background deposits")
+					local depositTable = { user = payload.user, amount = payload.deposit, address = originAddress, src = packet.src, amountDelivered = 0, public=false }
+					table.insert(serverConfigs.deposits,depositTable)
 				elseif payload.withdrawl then
 					if username.balance >= payload.withdrawl then
 						debugPrint("Withdrawl accepted for "..tostring(payload.withdrawl).." User: "..payload.user)
 						amount = payload.withdrawl * -1
 						username.balance = username.balance + amount
 						transaction = "Withdrawl for "..tostring(amount)
-						accepted = true
 
 						local returnAddress = "ATM "..packet.src
 						if payload.bankTeller then
@@ -395,19 +416,42 @@ local function receiveLoopBank(packet,side)
 						withdrawl(payload.withdrawl,returnAddress)
 					else
 						debugPrint("Withdrawl denied for "..tostring(payload.deposit).." User: "..payload.user)
-						sendBankNetwork(packet.src,{ type="ERROR", message="Not enough in balance for withdrawl, Balance: ".." Withdrawl amount: "..payload.withdrawl } )
+						sendBankNetwork(packet.src,{ type="ERROR", message="Not enough in balance for withdrawl, Balance: "..username.balance.." Withdrawl amount: "..payload.withdrawl } )
 						return
 					end
+					if #username.transactions > 25 then
+						table.remove(username.transactions,#username.transactions)
+					end
+					table.insert(username.transactions,1,transaction)
+					saveConfigs()
+					sendBankNetwork(packet.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
 				else
 					debugPrint("Invalid Balance Update "..textutils.serialize(payload))
 				end
-				if #username.transactions > 25 then
-					table.remove(username.transactions,#username.transactions)
+			elseif payload.type == "WITHDRAWL" then -- Packet type for specific withdrawl (User defines the coins sent to them)
+				if payload.pass ~= username.pass then debugPrint("[BALANCE_UPDATE] Failed password check") return end
+				local transaction
+				local total = 0
+				debugPrint("[WITHDRAWL] Trying to find total from specific withdrawl request")
+				for _,coin in pairs(payload.request) do -- {name="coin_copper,amount=5}
+					local value = values[coin.name]
+					total = value*coin.amount
 				end
-				table.insert(username.transactions,1,transaction)
-				saveConfigs()
-				if accepted then
+				debugPrint("[WITHDRAWL] Found total: "..tostring(total))
+				if username.balance >= total then
+					debugPrint("[WITHDRAWL] Refromatting request to appropriate form for Stock Ticker and requesting")
+					for _,coin in pairs(payload.request) do
+						stockTicker.requestFiltered(payload.address,{name="lightmanscurrency:"..coin.name,_requestCount=coin.amount})
+					end
+					transaction = "Withdrawl for "..tostring(total)
+					if #username.transactions > 25 then
+						table.remove(username.transactions,#username.transactions)
+					end
+					table.insert(username.transactions,1,transaction)
+					saveConfigs()
 					sendBankNetwork(packet.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
+				else
+					sendBankNetwork(packet.src,{type="ERROR", message="Not enough for withdrawl, Balance: "..username.balance.." Withdrawl amount: "..total})
 				end
 			elseif payload.type == "WIRE_TRANSFER" then
 				if payload.pass ~= username.pass then return end
@@ -439,20 +483,22 @@ local function receiveLoopBank(packet,side)
 			elseif payload.type == "REGISTER_PIN" then
 				if payload.pass ~= username.pass then debugPrint("[CARD] Password not correct!") return end
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
-				debugPrint("[CARD] Either registering or changin a card!")
+				debugPrint("Either registering or changing a card!")
 				if username.cardNum then
-					sendBankNetwork(packet.src, {type="ERROR", message = "Already have a card number try changing the pin instead!"})
+					sendBankNetwork(packet.src, {type="ERROR", message = "Already have a card number try changing it instead!"})
 				elseif payload.register then
-					debugPrint("[CARD] Trying to register a card")
-					local cardNum = tostring(1200+serverConfigs.cardsRegistered+math.random(8799))
-					serverConfigs.usernames[payload.user].cardNum = cardNum
-					serverConfigs.usernames[payload.user].pin = payload.pinNum
+					debugPrint("Trying to register a card")
+					local randInt = math.random(1,8799)
+					debugPrint("Random Int is: "..tostring(randInt))
+					local cardNum = tostring(1200+serverConfigs.cardsRegistered+randInt)
+					serverConfigs.cardsRegistered = serverConfigs.cardsRegistered + 1
+					table.insert(serverConfigs.usernames[payload.user].cards, { cardNum = cardNum, pin = payload.pinNum })
 					sendBankNetwork(packet.src, {type="PIN_RESP", cardNum = cardNum} )
 					debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
-					debugPrint("[CARD] Trying to change a pin")
+					debugPrint("Trying to change a pin")
 					serverConfigs.usernames[payload.user].pin = payload.pinNum
-					sendBankNetwork(packet.src, {type="PIN_RESP", changed = true} )
+					sendBankNetwork(packet.src, {type="PIN_RESP", changed = true, newPin = serverConfigs.usernames[payload.user].pin} )
 					debugPrint("Card changed for "..payload.user)
 				end
 				saveConfigs()
@@ -471,24 +517,34 @@ local function receiveLoopPublic(packet,side)
         debugPrint("Valid packet, processing, true")
         local payload = packet.payload
 		local username
+		local userCard
 		if payload.user then
 			username = serverConfigs.usernames[payload.user]
 			debugPrint("Direct Username and Pass provided, no need to translate card number and pin")
 		elseif payload.card then
 			debugPrint("Finding card num and matching to provided card")
 			for user, info in pairs(serverConfigs.usernames) do
-				if info.cardNum == payload.card then
-					username = serverConfigs.usernames[user]
-					debugPrint("Found card")
-					break
+				if info.cards then
+					for card,cardData in pairs(info.cards) do
+						if cardData.cardNum == payload.cardNum then
+							username = serverConfigs.usernames[user]
+							payload.user = user
+							userCard = cardData
+							break
+						end
+					end
+					if username then
+						debugPrint("Found card")
+						break
+					end
 				end
+			end
+			if payload.card == userCard.cardNBT and userCard.pin == payload.pin then
+				debugPrint("Card number and Pin are correct, translating password")
+				payload.pass = username.pass
 			end
 		end
 		debugPrint("Payload type is "..payload.type)
-		if payload.card and username.cardNum == payload.card and username.pin == payload.pin then
-            debugPrint("Card number and Pin are correct, translating password")
-			payload.pass = username.pass
-		end
         if type(payload)~="table" then
             debugPrint("Invalid payload from "..tostring(packet.src))
 			return
@@ -545,48 +601,67 @@ local function receiveLoopPublic(packet,side)
 				if payload.pass ~= username.pass then debugPrint("[BALANCE_UPDATE] Failed password check") return end
 				local amount
                 local transaction
-				local accepted = false
 				if payload.deposit then
-                    debugPrint("Deposit accepted for "..tostring(payload.deposit).." User: "..payload.user)
-                    amount = payload.deposit
-					username.balance = username.balance + amount
-					transaction = "Deposit of "..tostring(amount)
-					accepted = true
+					debugPrint("[DEPOSIT] Inserting deposit into background deposits")
+					local depositTable = { user = payload.user, amount = payload.deposit, address = packet.src, src = packet.src, amountDelivered = 0, public=true }
+                    table.insert(serverConfigs.deposits,depositTable)
 				elseif payload.withdrawl then
 					if username.balance >= payload.withdrawl then
 						debugPrint("Withdrawl accepted for "..tostring(payload.withdrawl).." User: "..payload.user)
 						amount = payload.withdrawl * -1
 						username.balance = username.balance + amount
 						transaction = "Withdrawl for "..tostring(amount)
-						accepted = true
 
-						local returnAddress = "ATM "..packet.src -- This needs to be changed for public app/website
-						if payload.bankTeller then
-							returnAddress = "BT "..packet.src
-						end
+						local returnAddress = packet.src
 						withdrawl(payload.withdrawl,returnAddress)
 					else
 						debugPrint("Withdrawl denied for "..tostring(payload.deposit).." User: "..payload.user)
 						sendPacket(packet.src,{ type="ERROR", message="Not enough in balance for withdrawl, Balance: ".." Withdrawl amount: "..payload.withdrawl } )
 						return
 					end
+					if #username.transactions > 25 then
+						table.remove(username.transactions,#username.transactions)
+					end
+					table.insert(username.transactions,1,transaction)
+					saveConfigs()
+					sendPacket(packet.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
                 else
                     debugPrint("Invalid Balance Update "..textutils.serialize(payload))
 				end
-				if #username.transactions > 25 then
-					table.remove(username.transactions,#username.transactions)
+			elseif payload.type == "WITHDRAWL" then -- Packet type for specific withdrawl (User defines the coins sent to them)
+				if payload.pass ~= username.pass then debugPrint("[BALANCE_UPDATE] Failed password check") return end
+				local transaction
+				local total = 0
+				debugPrint("[WITHDRAWL] Trying to find total from specific withdrawl request")
+				for _,coin in pairs(payload.request) do -- {name="coin_copper,amount=5}
+					debugPrint("[WITHDRAWL] looking up value")
+					local value = values[coin.name]
+					debugPrint("[WITHDRAWL] adding to total")
+					total = value*coin.amount
 				end
-				table.insert(username.transactions,1,transaction)
-				saveConfigs()
-				if accepted then
+				debugPrint("[WITHDRAWL] Found total: "..tostring(total))
+				if username.balance >= total then
+					debugPrint("[WITHDRAWL] Refromatting request to appropriate form for Stock Ticker and requesting")
+					for _,coin in pairs(payload.request) do
+						stockTicker.requestFiltered(payload.address,{name="lightmanscurrency:"..coin.name,_requestCount=coin.amount})
+					end
+					debugPrint("[WITHDRAWL] Adding to transaction list")
+					transaction = "Withdrawl for "..tostring(total)
+					if #username.transactions > 25 then
+						table.remove(username.transactions,#username.transactions)
+					end
+					table.insert(username.transactions,1,transaction)
+					saveConfigs()
 					sendPacket(packet.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
+				else
+					sendPacket(packet.src,{type="ERROR", message="Not enough for withdrawl, Balance: "..username.balance.." Withdrawl amount: "..total})
 				end
 			elseif payload.type == "WIRE_TRANSFER" then
 				if payload.pass ~= username.pass then return end
 				local srcAcct = username.balance
 				local dstAcct = serverConfigs.usernames[payload.wireDst]
 				local transaction
-				if not dstAcct then sendBankNetwork(packet.src,{ type="ERROR", message="Destination account does not exist" } ) return end
+				if not dstAcct then sendPacket(packet.src,{ type="ERROR", message="Destination account does not exist" } ) return end
 				if srcAcct >= payload.amount then
 					username.balance = username.balance - payload.amount
 					dstAcct.balance = dstAcct.balance + payload.amount
@@ -609,18 +684,28 @@ local function receiveLoopPublic(packet,side)
 					return
 				end
 			elseif payload.type == "REGISTER_PIN" then
-				if payload.pass ~= username.pass then return end
+				if payload.pass ~= username.pass then debugPrint("[CARD] Password not correct!") return end
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
-				if payload.register then
-					local cardNum = tostring(serverConfigs.cardsRegistered+1200)
-					serverConfigs.usernames[payload.user].cardNum = cardNum
-					serverConfigs.usernames[payload.user].pin = payload.pinNum
+				debugPrint("Either registering or changing a card!")
+				if username.cardNum then
+					sendPacket(packet.src, {type="ERROR", message = "Already have a card number try changing it instead!"})
+				elseif payload.register then
+					debugPrint("Trying to register a card")
+					local randInt = math.random(1,8799)
+					debugPrint("Random Int is: "..tostring(randInt))
+					local cardNum = tostring(1200+serverConfigs.cardsRegistered+randInt)
+					if not serverConfigs.usernames[payload.user].cards then
+						serverConfigs.usernames[payload.user].cards = {}
+					end
+					table.insert(serverConfigs.usernames[payload.user].cards, { cardNum = cardNum, pin = payload.pinNum })
+					serverConfigs.cardsRegistered = serverConfigs.cardsRegistered + 1
 					sendPacket(packet.src, {type="PIN_RESP", cardNum = cardNum} )
-                    debugPrint("Card registered for "..payload.user)
+					debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
+					debugPrint("Trying to change a pin")
 					serverConfigs.usernames[payload.user].pin = payload.pinNum
-					sendPacket(packet.src, {type="PIN_RESP", changed = true} )
-                    debugPrint("Card changed for "..payload.user)
+					sendPacket(packet.src, {type="PIN_RESP", changed = true, newPin = serverConfigs.usernames[payload.user].pin} )
+					debugPrint("Card changed for "..payload.user)
 				end
 				saveConfigs()
             else
@@ -644,6 +729,102 @@ local function listener()
 			receiveLoopPublic(msg,side)
 		end
     end
+end
+
+local function checkForCard(pkg,address) -- Handles if someone sent a card to the bank, also returns false if a card is not found
+	debugPrint("Checking package for card")
+	local card = pkg.getItemDetail(1)
+	if card.name ~= "minecraft:written_book" then
+		debugPrint("Package first slot is not a written book therefore no card")
+		return false
+	end
+	local itemName = card["displayName"]
+	debugPrint("Finding card in database, CardNum: "..itemName)
+	for user,data in pairs(serverConfigs.usernames) do
+		if data.cards then
+			debugPrint("Cards Table found for user: "..user)
+			debugPrint("Cards table: "..textutils.serialize(data.cards))
+			for _,cardData in pairs(data.cards) do
+				debugPrint("Card: "..textutils.serialize(cardData))
+				if cardData.cardNum == itemName and not cardData.cardNBT then
+					debugPrint(textutils.serialize(card))
+					cardData.cardNBT = card.nbt
+					saveConfigs()
+					debugPrint("Card was found, saving NBT data and queuing return")
+					os.queueEvent("return_card",card.nbt,address)
+					return true
+				end
+			end
+		end
+	end
+	debugPrint("Card was not found returning false")
+	return false
+end
+
+local function depositConfirmLoop()
+	local function addUp(list)
+		local content = {}
+    	for _, item in pairs(list) do
+        	local iname = item.name:match(":(.+)")
+        	if content[iname] then
+            	content[iname] = content[iname]+item.count
+        	else
+            	content[iname] = item.count -- { ["coin_copper"] = 64 }
+       		end
+    	end
+		local total = 0
+		for item, amount in pairs(content) do
+			total = total + (amount*values[item])
+		end
+		return total
+	end
+	while true do
+		local _,_,pkg = os.pullEvent("package_received")
+		local address = pkg.getAddress():match("^Bank%s+(.+)$")
+		if not checkForCard(pkg,address) then
+			local dep
+			local depIndex
+			debugPrint("[DEPOSIT] Trying to match package to a deposit in deposits table, Address: "..address)
+			for i, deposit in ipairs(serverConfigs.deposits) do
+				if deposit.address == address then
+					dep = deposit
+					depIndex = i
+				end
+			end
+			if dep then
+				local username = serverConfigs.usernames[dep.user]
+				debugPrint("[DEPOSIT] Found a match checking value and adding to amount delivered")
+				local packageValue = addUp(pkg.list())
+				serverConfigs.deposits[depIndex].amountDelivered = dep.amountDelivered + packageValue
+				if serverConfigs.deposits[depIndex].amountDelivered >= dep.amount then -- If somehow more is delivered than expected don't deny the user the deposit
+					debugPrint("[DEPOSIT] Deposit accepted for "..tostring(dep.amountDelivered).." User: "..dep.user)
+					serverConfigs.usernames[dep.user].balance = serverConfigs.usernames[dep.user].balance + dep.amountDelivered -- Once again safeguard in case more is delivered than expected
+					local transaction = "Deposit of "..tostring(dep.amountDelivered)
+					if #username.transactions > 25 then
+						table.remove(username.transactions,#username.transactions)
+					end
+					table.insert(username.transactions,1,transaction)
+					saveConfigs()
+					if dep.public then
+						sendPacket(dep.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
+					else
+						sendBankNetwork(dep.src,{type = "BALANCE_UPDATE_ACCT_RESP", accountInfo = username})
+					end
+					debugPrint("[DEPOSIT] Deposit confirmed and update sent to user")
+				end
+			end
+		end
+	end
+end
+
+local function cardReturn()
+	while true do
+		local _,nbt,address = os.pullEvent("return_card")
+		debugPrint("Card return active, waiting 20 seconds to assure card is in vault")
+		os.sleep(20)
+		debugPrint("Card return attempting to request fro Stock Ticker")
+		stockTicker.requestFiltered(address,{nbt=nbt,_requestCount=1})
+	end
 end
 -- ==========================
 -- CLI LOOP
@@ -708,4 +889,4 @@ end
 
 ensureStartup()
 
-parallel.waitForAny(listener, cliLoop)
+parallel.waitForAny(listener, cliLoop, depositConfirmLoop, cardReturn)

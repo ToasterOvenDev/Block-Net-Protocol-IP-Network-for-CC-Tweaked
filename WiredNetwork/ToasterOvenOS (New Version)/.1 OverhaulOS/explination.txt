@@ -1,0 +1,5 @@
+This folder is to contain the overhaul of ToasterOvenOS.
+My current version is messy, all in one file, and doesn't take into account different screen sizes, so I'm completely overhauling the GUI and other features.
+
+
+I need to split up the files so that I don't have one monsterous file and I can produce a better stracktrace when errors occur
