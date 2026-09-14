@@ -14,6 +14,8 @@ Block-Net Protocol or BNP is a protocol made for CC: Tweaked that loosely follow
 ### To get ToasterOvenOS use this command:
 "wget https://raw.githubusercontent.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/refs/heads/Stable/WiredNetwork/ToasterOvenOS%20(GUI%20Client)/OSInstaller.lua oSInstaller.lua"
 
+#### Note: These commands get the Stable version, which is **far** behind the unstable version, but is entirely usable unlike the unstable version of the system
+
 ### About Me
 
 I am a computer science major switching from IT and I thought this would be a fun little project.
@@ -33,7 +35,7 @@ For more information on CC: Tweaked click [here](https://tweaked.cc) and downloa
 
 Basalt version 1.7 is used to make the GUI for ToasterOvenOS and can be found [here](https://github.com/Pyroxenium/Basalt)
 
-Basalt has a beta 2.0 version [here](https://github.com/Pyroxenium/Basalt2)
+Basalt has a beta 2.0 version [here](https://github.com/Pyroxenium/Basalt2) and is being used to overhaul ToasterOvenOS
 
 # Support
 
@@ -41,7 +43,7 @@ If you have any questions try checking the [wiki](https://github.com/ToasterOven
 
 if the problem persists create an Issue on [Github](https://github.com/ToasterOvenDev/CC-Tweaked-IP-Network/issues)
 
-AFTER CREATING AN ISSUE AND CHECKING WIKI
+**AFTER CREATING AN ISSUE AND CHECKING THE WIKI**
 If the problem is extremely persistent or there's no information try [contacting me](https://github.com/ToasterOvenDev/Block-Net-Protocol-IP-Network-for-CC-Tweaked/blob/Stable/README.md#contacting-me)
 
 # License
