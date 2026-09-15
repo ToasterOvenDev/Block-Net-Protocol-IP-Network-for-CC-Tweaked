@@ -207,6 +207,16 @@ local function addUp(chest)
     return total
 end
 
+local function lookForCard(ch) -- Modified version of lookIn function to check if a card can be used to log in
+	local chst = waitForPeripheral(ch, 5) -- Makes sure that the chests are still there
+    local banklist = waitForList(chst, ch) -- Makes sure that the contents have loaded still
+	local card = chst.getItemDetail(1)
+	if card.nbt then
+		return card.nbt, card.displayName
+	end
+	return false
+end
+
 local function sendChest(schest,dchest)
 	debugPrint("SendChest Function")
 	debugPrint(textutils.serialize(peripheral.getMethods(schest)))
@@ -315,7 +325,18 @@ local function fillLoginFrame()
 				username = userInput:getText()
 				local password = passInput:getText()
 				if username == "" or password == "" then
-					errorPopup("Missing Username or Password")
+					local card,num = lookForCard(chests[bank])
+					if card then
+						if password ~= "" then
+							errorPopup("Login attempt accepted")
+							sendPacket({type="LOGIN_ATTEMPT", card = card, pin = password, cardNum = num})
+							loginF = true
+						else
+							errorPopup("Please enter pin in password feild")
+						end
+					else
+						errorPopup("Missing Username or Password")
+					end
 				else
 					errorPopup("Login attempt accepted")
 					sendPacket({ type="LOGIN_ATTEMPT", user = username, pass = password })
@@ -612,6 +633,7 @@ local function packetHandling(packet)
 		loginF = false
 		if payload.confirm == "Allow" then
 			-- move on to ATM with account info
+			username = payload.name
 			buildATM(payload.accountInfo)
 		elseif payload.confirm == "Deny" then
 			errorPopup("Passowrd Incorrect")

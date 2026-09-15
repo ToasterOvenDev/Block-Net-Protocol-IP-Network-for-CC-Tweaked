@@ -218,7 +218,7 @@ local function lookForCard(ch) -- Modified version of lookIn function to check i
     local banklist = waitForList(chst, ch) -- Makes sure that the contents have loaded still
 	local card = chst.getItemDetail(1)
 	if card.nbt then
-		return card.nbt
+		return card.nbt, card.displayName
 	end
 	return false
 end
@@ -298,6 +298,41 @@ local function errorPopup(msg)
 		end)
 end
 
+local function confirm()
+	-- Make an error popup frame
+	local confirmFrame = main:addFrame()
+		:centerHorizontal("parent")
+		:centerVertical("parent")
+		:setBackground(colors.orange)
+		:setSize(31, 10)
+	confirmFrame:addLabel()
+		:setText("Are you sure?")
+		:setForeground(colors.red)
+		:setPosition(2, 2)
+		:setSize(29,4)
+		:setAutoSize(false)
+	confirmFrame:addButton()
+		:setText("Yes")
+		:setBackground(colors.orange)
+		:setForeground(colors.red)
+		:setSize(3,1)
+		:setPosition(15, 8)
+		:onClick(function()
+			confirmFrame:destroy()
+			return true
+		end)
+	confirmFrame:addButton()
+		:setText("No")
+		:setBackground(colors.orange)
+		:setForeground(colors.red)
+		:setSize(2,1)
+		:setPosition(15, 8)
+		:onClick(function()
+			confirmFrame:destroy()
+			return false
+		end)
+end
+
 local function fillLoginFrame()
 	LoginFrame = main:addFrame():setBackground(colors.green):setSize(51,19)
 	LoginFrame:addBigFont()
@@ -331,10 +366,12 @@ local function fillLoginFrame()
 				username = userInput:getText()
 				local password = passInput:getText()
 				if username == "" or password == "" then
-					local card = lookForCard(chests[bank])
+					local card,num = lookForCard(chests[bank])
 					if card then
 						if password ~= "" then
-							sendPacket({type="LOGIN_ATTEMPT", card = card, pin = password})
+							errorPopup("Login attempt accepted")
+							sendPacket({type="LOGIN_ATTEMPT", card = card, pin = password, cardNum = num})
+							loginF = true
 						else
 							errorPopup("Please enter pin in password feild")
 						end
@@ -374,11 +411,13 @@ local balanceLabel
 local loggedIn = false
 local popupOpen = false
 local cardLabel
+local accountCards
 
 local function buildATM(accountInfo)
 	balance = tostring(accountInfo.balance)
 	ATMframe = main:addFrame():setBackground(colors.green):setSize(51,19):setVisible(true)
 	loggedIn = true
+	accountCards = accountInfo.cards
 
 	local function deposit()
 		local function sendRedstoneSignalToOtherChest() -- Literally just activates a redstone signal to send the package on the other side of the other chest
@@ -553,26 +592,51 @@ local function buildATM(accountInfo)
 		end)
 	end
     local function card()
-        popupOpen = true
-        popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
-        cardLabel = popup:addLabel():setText("Please enter a pin for the card"):setPosition(2,1):setSize(28,4):setAutoSize(false)
-        local input = popup:addInput():setPlaceholder("Pin number..."):setPosition(2,6):setSize(13,1)
-        popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
-        local reqButton = popup:addButton():setText("Request Card Number"):setPosition(2,10):setSize(19,1):onClick(function()
-            cardLabel:setText("Requesting a card number from bank server...")
-            local pin = input:getText()
-            sendPacket({type="REGISTER_PIN", register = true, pinNum=pin, pass = accountInfo.pass, user=username})
-        end)
-        local changeButton = popup:addButton():setText("Change pin"):setPosition(2,11):setSize(10,1):onClick(function()
-            cardLabel:setText("Requesting pin change...")
-            local pin = input:getText()
-            sendPacket({type="REGISTER_PIN", change = true, pinNum=pin, pass = accountInfo.pass, user=username})
-        end)
-		if accountInfo.cardNum then
-			cardLabel:setText("Your card number is "..accountInfo.cardNum.." and your current pin is "..accountInfo.pin)
-			reqButton:destroy()
-			changeButton:setPosition(2,10)
+		popupOpen = true
+		popup = ATMframe:addFrame():setSize(30,11):setPosition(9,6)
+		local overlayPopup
+		cardLabel = popup:addLabel():setText("Do you want to Create a new card or change the pin of a existing card?"):setPosition(2,1):setSize(28,4):setAutoSize(false)
+		popup:addButton():setSize(4,1):setPosition(26,10):setText("Stop"):onClick(function() popup:destroy() popupOpen = false end)
+		local function createNew()
+			overlayPopup = popup:addFrame():setSize(30,8):setPosition(1,4)
+			cardLabel:setText("Enter pin for new card.")
+			local input = overlayPopup:addInput():setPlaceholder("Pin number..."):setPosition(2,1):setSize(13,1)
+			overlayPopup:addButton():setText("Request Card Number"):setPosition(2,4):setSize(19,1):onClick(function()
+				cardLabel:setText("Requesting a card number from bank server...")
+				local pin = input:getText()
+				sendPacket({type="REGISTER_PIN", register = true, pinNum=pin, pass = accountInfo.pass, user=username})
+			end)
+			overlayPopup:addButton():setSize(4,1):setPosition(26,7):setText("Back"):onClick(function() cardLabel:setText("Do you want to Create a new card or change the pin of a existing card?") overlayPopup:destroy() end)
 		end
+		local function editOld()
+			overlayPopup = popup:addFrame():setSize(30,8):setPosition(1,4)
+			cardLabel:setText("Choose a card")
+			local keyedCards = {} -- Version of accountCards that is keyed by card Num to easily reference the pin number of specific cards
+			local cardList = overlayPopup:addList():setPosition(1,1):setSize(13,5):setBackground(colors.blue):onSelect(function(self,index,item)
+				local trf = "NO"
+				if keyedCards[item.text].cardNBT then trf = "YES" end
+				cardLabel:setText("Card:"..item.text.." Pin:"..keyedCards[item.text].pin.. " NBT:"..trf)
+			end)
+			for _,cData in pairs(accountCards) do
+				debugPrint("cData = "..textutils.serialize(cData))
+				cardList:addItem(cData.cardNum)
+				keyedCards[cData.cardNum] = { pin = cData.pin, cardNBT = cData.cardNBT }
+			end
+			local input = overlayPopup:addInput():setPlaceholder("Pin number..."):setPosition(2,6):setSize(13,1)
+			overlayPopup:addButton():setText("Change pin"):setPosition(2,7):setSize(10,1):onClick(function()
+				cardLabel:setText("Requesting pin change...")
+				local pin = input:getText()
+				sendPacket({type="REGISTER_PIN", change = true, pinNum=pin, pass = accountInfo.pass, user=username, cardNum = cardList:getSelectedItem().text})
+			end)
+			overlayPopup:addButton():setText("Remove"):setPosition(14,7):setSize(6,1):onClick(function()
+				if confirm() then
+					sendPacket({type="REGISTER_PIN", remove=true, cardNum = cardList:getSelectedItem().text, pass = accountInfo.pass, user=username})
+				end
+			end)
+			overlayPopup:addButton():setSize(4,1):setPosition(26,7):setText("Back"):onClick(function() cardLabel:setText("Do you want to Create a new card or change the pin of a existing card?") overlayPopup:destroy() end)
+		end
+		popup:addButton():setText("Create"):setSize(6,1):setPosition(2,7):onClick(function() createNew() end)
+		popup:addButton():setText("Edit"):setSize(4,1):setPosition(10,7):onClick(function() editOld() end)
     end
 
 	LoginFrame:destroy()
@@ -650,6 +714,7 @@ local function packetHandling(packet)
 		loginF = false
 		if payload.confirm == "Allow" then
 			-- move on to ATM with account info
+			username = payload.name
 			buildATM(payload.accountInfo)
 		elseif payload.confirm == "Deny" then
 			errorPopup("Passowrd Incorrect")
@@ -662,10 +727,15 @@ local function packetHandling(packet)
 		debugPrint("Tried to replace transactions and balance")
 		errorPopup("Blaance changed, Deposit/Withdrawl successful")
     elseif payload.type == "PIN_RESP" then
-        if payload.cardNum then
+		if payload.removed then
+			cardLabel:setText(payload.cardNum.." has been removed")
+			accountCards = payload.cards
+		elseif payload.cardNum then
             cardLabel:setText("New card number is "..payload.cardNum)
+			accountCards = payload.cards
         elseif payload.changed then
-            cardLabel:setText("Pin number changed to "..payload.newPin)
+            cardLabel:setText("Pin number changed to "..payload.newPin.." to see changes please back out and re-enter this screen")
+			accountCards = payload.cards
         end
 	end
 end
@@ -700,8 +770,9 @@ local function setupCLI()
 		print("\nDo you want to continue with these settings? (y/n)")
 		userin = read()
 		if userin == "y" then
-			print("Settings saved, please restart device")
+			print("Settings saved, starting bankApp...")
 			settingup = false
+			os.sleep(2)
 		else
 			print("resetting process")
 			bankBNP = nil

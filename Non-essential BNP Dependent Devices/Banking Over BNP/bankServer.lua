@@ -336,8 +336,10 @@ local function receiveLoopBank(packet,side)
 			debugPrint("Finding card num and matching to provided card")
 			for user, info in pairs(serverConfigs.usernames) do
 				if info.cards then
-					for card,cardData in pairs(info.cards) do
+					debugPrint("Checking cards for "..user)
+					for _,cardData in pairs(info.cards) do
 						if cardData.cardNum == payload.cardNum then
+							debugPrint("Found Card: "..textutils.serialize(cardData))
 							username = serverConfigs.usernames[user]
 							payload.user = user
 							userCard = cardData
@@ -350,12 +352,16 @@ local function receiveLoopBank(packet,side)
 					end
 				end
 			end
+			if payload.card == userCard.cardNBT and userCard.pin == payload.pin then
+				debugPrint("Card NBT and Pin are correct, translating password")
+				payload.pass = username.pass
+			else
+				debugPrint("Card NBT and Pin are not Correct, exiting")
+				sendBankNetwork(packet.src,{type = "LOGIN_RESP", confirm = "Deny"}) --Say login failed
+				return
+			end
 		end
 		debugPrint("Payload type is "..payload.type)
-		if payload.card == userCard.cardNBT and userCard.pin == payload.pin then
-			debugPrint("Card number and Pin are correct, translating password")
-			payload.pass = username.pass
-		end
         if type(payload)~="table" then
             debugPrint("Invalid payload from "..tostring(packet.src))
 			return
@@ -369,9 +375,10 @@ local function receiveLoopBank(packet,side)
 					debugPrint("Login attempt failed, user not found")
 					return
 				elseif payload.pass == username.pass then
-					response = { type = "LOGIN_RESP", confirm = "Allow", accountInfo = username }
+					response = { type = "LOGIN_RESP", confirm = "Allow", accountInfo = username, name = payload.user } -- We send payload.user so that when you login with a card the Username can be displayed
+					debugPrint("Response: "..textutils.serialize(response))
 					sendBankNetwork(packet.src,response) --Say login succeeds
-					debugPrint("Login attempt succeeded")
+					debugPrint("Login attempt succeeded"..packet.src)
 					return
 				else
 					response = { type = "LOGIN_RESP", confirm = "Deny" }
@@ -484,22 +491,41 @@ local function receiveLoopBank(packet,side)
 				if payload.pass ~= username.pass then debugPrint("[CARD] Password not correct!") return end
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
 				debugPrint("Either registering or changing a card!")
-				if username.cardNum then
-					sendBankNetwork(packet.src, {type="ERROR", message = "Already have a card number try changing it instead!"})
-				elseif payload.register then
+				if payload.register then
 					debugPrint("Trying to register a card")
 					local randInt = math.random(1,8799)
 					debugPrint("Random Int is: "..tostring(randInt))
-					local cardNum = tostring(1200+serverConfigs.cardsRegistered+randInt)
+					local cardNum = tostring(1200+randInt)..tostring(serverConfigs.cardsRegistered)
 					serverConfigs.cardsRegistered = serverConfigs.cardsRegistered + 1
+					if not serverConfigs.usernames[payload.user].cards then
+						serverConfigs.usernames[payload.user].cards = {}
+					end
 					table.insert(serverConfigs.usernames[payload.user].cards, { cardNum = cardNum, pin = payload.pinNum })
-					sendBankNetwork(packet.src, {type="PIN_RESP", cardNum = cardNum} )
+					sendBankNetwork(packet.src, {type="PIN_RESP", cardNum = cardNum, cards = serverConfigs.usernames[payload.user].cards} )
 					debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
 					debugPrint("Trying to change a pin")
-					serverConfigs.usernames[payload.user].pin = payload.pinNum
-					sendBankNetwork(packet.src, {type="PIN_RESP", changed = true, newPin = serverConfigs.usernames[payload.user].pin} )
+					local cIndex
+					for i,cData in pairs(username.cards) do
+						debugPrint("Looking for "..tostring(payload.cardNum))
+						if cData.cardNum == payload.cardNum then
+							debugPrint("Found "..tostring(cData.cardNum).." the index is: "..tostring(i))
+							cIndex = i
+						end
+					end
+					debugPrint("Found Card changing the pin at Index: "..tostring(cIndex))
+					serverConfigs.usernames[payload.user].cards[cIndex].pin = payload.pinNum
+					sendBankNetwork(packet.src, {type="PIN_RESP", changed = true, newPin = serverConfigs.usernames[payload.user].cards[cIndex].pin, cards = serverConfigs.usernames[payload.user].cards} )
 					debugPrint("Card changed for "..payload.user)
+				elseif payload.disable then
+					debugPrint("Finding card to disable")
+					debugPrint("Looking for "..tostring(payload.cardNum).."to disable")
+					for i,cData in pairs(username.cards) do
+						if cData.cardNum == payload.cardNum then
+							serverConfigs.usernames[payload.user].cards[i] = nil
+							sendBankNetwork(packet.src, {type="PIN_RESP", cardNum = cData.cardNum, cards = serverConfigs.usernames[payload.user].cards, removed = true} )
+						end
+					end
 				end
 				saveConfigs()
             else
@@ -542,6 +568,8 @@ local function receiveLoopPublic(packet,side)
 			if payload.card == userCard.cardNBT and userCard.pin == payload.pin then
 				debugPrint("Card number and Pin are correct, translating password")
 				payload.pass = username.pass
+			else
+				sendPacket(packet.src,{type = "LOGIN_RESP", confirm = "Deny"}) --Say login failed
 			end
 		end
 		debugPrint("Payload type is "..payload.type)
@@ -570,7 +598,7 @@ local function receiveLoopPublic(packet,side)
                     debugPrint("Login attempt failed, user not found")
 					return
 				elseif payload.pass == username.pass then
-					response = { type = "LOGIN_RESP", confirm = "Allow", accountInfo = username }
+					response = { type = "LOGIN_RESP", confirm = "Allow", accountInfo = username, name = payload.user } -- We send payload.user so that when you login with a card the Username can be displayed
 					sendPacket(packet.src,response) --Say login succeeds
                     debugPrint("Login attempt succeeded")
 					return
@@ -687,24 +715,28 @@ local function receiveLoopPublic(packet,side)
 				if payload.pass ~= username.pass then debugPrint("[CARD] Password not correct!") return end
 				-- This will register a "card" number and a pin for that number (I may come up with a way to read a physical card later)
 				debugPrint("Either registering or changing a card!")
-				if username.cardNum then
-					sendPacket(packet.src, {type="ERROR", message = "Already have a card number try changing it instead!"})
-				elseif payload.register then
+				if payload.register then
 					debugPrint("Trying to register a card")
 					local randInt = math.random(1,8799)
 					debugPrint("Random Int is: "..tostring(randInt))
 					local cardNum = tostring(1200+serverConfigs.cardsRegistered+randInt)
-					if not serverConfigs.usernames[payload.user].cards then
-						serverConfigs.usernames[payload.user].cards = {}
-					end
-					table.insert(serverConfigs.usernames[payload.user].cards, { cardNum = cardNum, pin = payload.pinNum })
 					serverConfigs.cardsRegistered = serverConfigs.cardsRegistered + 1
-					sendPacket(packet.src, {type="PIN_RESP", cardNum = cardNum} )
+					table.insert(serverConfigs.usernames[payload.user].cards, { cardNum = cardNum, pin = payload.pinNum })
+					sendPacket(packet.src, {type="PIN_RESP", cardNum = cardNum, cards = serverConfigs.usernames[payload.user].cards} )
 					debugPrint("Card registered for "..payload.user)
 				elseif payload.change then
 					debugPrint("Trying to change a pin")
-					serverConfigs.usernames[payload.user].pin = payload.pinNum
-					sendPacket(packet.src, {type="PIN_RESP", changed = true, newPin = serverConfigs.usernames[payload.user].pin} )
+					local cIndex
+					for i,cData in pairs(username.cards) do
+						debugPrint("Looking for "..tostring(payload.cardNum))
+						if cData.cardNum == payload.cardNum then
+							debugPrint("Found "..tostring(cData.cardNum).." the index is: "..tostring(i))
+							cIndex = i
+						end
+					end
+					debugPrint("Found Card changing the pin at Index: "..tostring(cIndex))
+					serverConfigs.usernames[payload.user].cards[cIndex].pin = payload.pinNum
+					sendPacket(packet.src, {type="PIN_RESP", changed = true, newPin = serverConfigs.usernames[payload.user].cards[cIndex].pin, cards = serverConfigs.usernames[payload.user].cards} )
 					debugPrint("Card changed for "..payload.user)
 				end
 				saveConfigs()
@@ -753,6 +785,9 @@ local function checkForCard(pkg,address) -- Handles if someone sent a card to th
 					debugPrint("Card was found, saving NBT data and queuing return")
 					os.queueEvent("return_card",card.nbt,address)
 					return true
+				elseif cardData.cardNum == itemName and cardData.cardNBT then
+					debugPrint("Card already has stored NBT data, queuing return")
+					os.queueEvent("return_card",card.nbt,address)
 				end
 			end
 		end
@@ -822,7 +857,7 @@ local function cardReturn()
 		local _,nbt,address = os.pullEvent("return_card")
 		debugPrint("Card return active, waiting 20 seconds to assure card is in vault")
 		os.sleep(20)
-		debugPrint("Card return attempting to request fro Stock Ticker")
+		debugPrint("Card return attempting to request from Stock Ticker")
 		stockTicker.requestFiltered(address,{nbt=nbt,_requestCount=1})
 	end
 end
