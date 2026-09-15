@@ -217,7 +217,7 @@ local function lookForCard(ch) -- Modified version of lookIn function to check i
 	local chst = waitForPeripheral(ch, 5) -- Makes sure that the chests are still there
     local banklist = waitForList(chst, ch) -- Makes sure that the contents have loaded still
 	local card = chst.getItemDetail(1)
-	if card.nbt then
+	if card then
 		return card.nbt, card.displayName
 	end
 	return false
@@ -376,7 +376,7 @@ local function fillLoginFrame()
 							errorPopup("Please enter pin in password feild")
 						end
 					else
-						errorPopup("Missing Username or Password")
+						errorPopup("Missing Username or Password Card could be missing in first slot")
 					end
 				else
 					errorPopup("Login attempt accepted")

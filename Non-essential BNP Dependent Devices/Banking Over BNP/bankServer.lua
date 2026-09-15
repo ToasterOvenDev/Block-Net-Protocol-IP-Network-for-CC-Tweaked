@@ -34,7 +34,7 @@ else
     f.close()
 end
 
-local DEBUG = true
+local DEBUG = false
 local function debugPrint(msg,fileOnly)
     fileOnly = fileOnly or false
     local time = os.date("%H:%M:%S")
