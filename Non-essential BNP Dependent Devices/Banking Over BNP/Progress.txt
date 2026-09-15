@@ -1,1 +1,11 @@
-You still need to make sure that the nbt registry process for the bank server works and if it does make sure that the reading is correct on the bankTeller and remote ATM
+Store Server needs to be developed. Possibly eaiser ways to use the Card like a Cash Register App to work in tandum with Store Server
+
+Store Server - Gets a packet requesting either a list of items available or requesting a purchase
+
+List - Uses the Create Storage System to list out what's available in connected System
+
+Purchase - First updates locally stored version of list removing the item from it, then sends it into a "lay-away" storage unitl the payment has cleared, once a payment has been cleared it waits
+5 seconds to assure the item(s) have made it into the lay-away storage and then requests from lay-away to the original address of the purchase
+
+Cash Register would just be a way to purchase without any of the complex server logic since the items would be on a physical shelf that they interact with "in-person" this could have
+an optional manually kept inventory
